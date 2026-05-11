@@ -1,0 +1,2 @@
+$env:PYTHONUTF8=1
+uv run harbor run -c adapters/pinchbench/pinchbench-openclaw-test.yaml
