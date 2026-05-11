@@ -1,0 +1,35 @@
+jobs_dir: jobs/claw-eval
+n_attempts: 1
+timeout_multiplier: 10
+agent_timeout_multiplier: 10
+verifier_timeout_multiplier: 10
+agent_setup_timeout_multiplier: 10
+environment_build_timeout_multiplier: 20
+orchestrator:
+  type: local
+  n_concurrent_trials: 2
+  quiet: false
+environment:
+  type: docker
+  force_build: true
+  delete: true
+agents:
+  - name: openclaw
+    model_name: anthropic/glm-4.7
+    env:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      LLM_JUDGE_MODEL: "gpt-5-mini"  # 评分器默认使用 GPT-5-mini，速度更快
+tasks:
+  # 中文多轮对话任务
+  - path: datasets/claw-eval/claw-eval-c01zh_mortgage_prepay
+  - path: datasets/claw-eval/claw-eval-c02zh_personal_finance
+  
+  # 英文金融任务
+  - path: datasets/claw-eval/claw-eval-c03en_real_estate_finance
+  
+  # 其他任务可以在这里添加
+  # - path: datasets/claw-eval/claw-eval-c04zh_image_processing
+  # - path: datasets/claw-eval/claw-eval-c05zh_personal_finance_2

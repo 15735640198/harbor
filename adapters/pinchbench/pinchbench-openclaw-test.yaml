@@ -1,0 +1,25 @@
+jobs_dir: jobs
+n_attempts: 1
+timeout_multiplier: 10
+agent_timeout_multiplier: 10
+verifier_timeout_multiplier: 10
+agent_setup_timeout_multiplier: 10
+environment_build_timeout_multiplier: 20
+orchestrator:
+  type: local
+  n_concurrent_trials: 1
+  quiet: false
+environment:
+  type: docker
+  force_build: true
+  delete: true
+agents:
+  - name: openclaw
+    model_name: anthropic/glm-4.7
+    env:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
+      LLM_JUDGE_MODEL: "anthropic/glm-4.7"
+tasks:
+  - path: datasets/pinchbench/task_blog
+#  - path: datasets/pinchbench/task_browser_automation

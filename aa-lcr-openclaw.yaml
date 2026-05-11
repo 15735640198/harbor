@@ -1,0 +1,27 @@
+jobs_dir: jobs
+n_attempts: 1
+timeout_multiplier: 1.5
+orchestrator:
+  type: local
+  n_concurrent_trials: 2
+  quiet: false
+environment:
+  type: docker
+  force_build: true
+  delete: true
+agents:
+  - name: openclaw
+    model_name: anthropic/glm-4.7
+    override_setup_timeout_sec: 600  # 设置10分钟安装超时
+    override_timeout_sec: 1200        # 设置20分钟执行超时
+    env:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+tasks:
+  # 运行前2个任务
+  - path: datasets/aa-lcr/aa-lcr-1
+  - path: datasets/aa-lcr/aa-lcr-3
+
+#  uv run harbor run -c .\aa-lcr-openclaw.yaml

@@ -1,0 +1,27 @@
+{
+  "name": "PinchBench Parity Experiment",
+  "description": "Parity evaluation of different agents on PinchBench benchmark",
+  "tasks": ["all"],
+  "agents": [
+    {
+      "name": "oracle",
+      "model": "oracle"
+    },
+    {
+      "name": "claude-code",
+      "model": "anthropic/claude-3-5-sonnet-20241022"
+    },
+    {
+      "name": "openhands",
+      "model": "openai/gpt-4o"
+    },
+    {
+      "name": "aider",
+      "model": "openai/gpt-4o"
+    }
+  ],
+  "evaluation": {
+    "n_runs": 2,
+    "metrics": ["pass_rate", "mean_score", "time_per_task"]
+  }
+}

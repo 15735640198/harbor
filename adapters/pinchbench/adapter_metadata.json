@@ -1,0 +1,29 @@
+{
+  "name": "pinchbench",
+  "version": "1.0.0",
+  "description": "PinchBench benchmark adapter for Harbor - evaluate AI agents on real-world tasks",
+  "author": "PinchBench Community",
+  "source_url": "https://github.com/pinchbench/skill",
+  "license": "MIT",
+  "task_count": 17,
+  "categories": [
+    "productivity",
+    "research",
+    "writing",
+    "coding",
+    "analysis",
+    "memory"
+  ],
+  "grading_types": [
+    "automated",
+    "llm_judge",
+    "hybrid"
+  ],
+  "minimum_harbor_version": "0.1.0",
+  "dependencies": [
+    "python>=3.11",
+    "openai>=1.0.0",
+    "pyyaml>=6.0.1",
+    "markdown-it-py>=3.0.0"
+  ]
+}

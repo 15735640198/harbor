@@ -1,0 +1,102 @@
+[
+  {
+    "adapter_name": "claw-eval",
+    "adapter_version": "1.0.0",
+    "adapter_builders": [
+      "Harbor Adapter Generator"
+    ],
+    "original_benchmark": {
+      "name": "Claw-Eval",
+      "version": "2.0",
+      "source": "https://github.com/claw-eval/claw-eval",
+      "paper": "https://arxiv.org/abs/2604.06132",
+      "official_leaderboard": "https://claw-eval.github.io",
+      "description": "300 human-verified tasks across 9 categories for trustworthy evaluation of autonomous agents. Evaluates completion, safety, and robustness.",
+      "splits": [
+        {
+          "name": "general",
+          "size": 161,
+          "description": "Core agent tasks across communication, finance, ops, productivity, etc."
+        },
+        {
+          "name": "multimodal",
+          "size": 101,
+          "description": "Perception and creation tasks including webpage generation, video QA, document extraction, etc."
+        },
+        {
+          "name": "multi_turn",
+          "size": 38,
+          "description": "Conversational tasks with simulated user personas for clarification and advice."
+        }
+      ],
+      "total_tasks": 300,
+      "supported_agents": "All general-purpose AI agents",
+      "evaluation_methodology": "LLM-as-judge grading against human-verified rubrics, multi-round evaluation for robustness",
+      "license": "MIT"
+    },
+    "harbor_adapter": {
+      "adapted_tasks_count": 300,
+      "parity_subset_size": 30,
+      "parity_sampling_rate": 0.1,
+      "registry_size": 300,
+      "supported_features": [
+        "Single-turn task evaluation",
+        "Multi-turn user agent conversation evaluation",
+        "Category-based task filtering",
+        "Language filtering (zh/en)",
+        "Difficulty level filtering",
+        "LLM-as-judge grading with detailed rubrics",
+        "Support for task-specific graders"
+      ],
+      "categories": [
+        "general",
+        "multimodal", 
+        "user_agent",
+        "finance",
+        "ops",
+        "productivity",
+        "coding",
+        "design",
+        "research"
+      ],
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "difficulty_levels": [
+        "easy",
+        "medium",
+        "hard"
+      ],
+      "grader_type": "LLM-as-judge (gpt-5-mini by default, configurable)",
+      "evaluation_dimensions": [
+        "completion",
+        "quality", 
+        "safety"
+      ],
+      "scoring_range": "0.0-1.0, PASS threshold at 0.6",
+      "env_requirements": {
+        "python_version": "3.11+",
+        "dependencies": [
+          "openai>=1.0.0",
+          "pyyaml>=6.0",
+          "numpy",
+          "pandas"
+        ],
+        "environment_variables": [
+          "OPENAI_API_KEY (required for grading)",
+          "OPENAI_BASE_URL (optional, for custom API endpoints)",
+          "MODEL_NAME (optional, default: gpt-5-mini)"
+        ]
+      },
+      "known_limitations": [
+        "Full fixture files (videos, large datasets) are not included in the GitHub repo, available separately on Hugging Face",
+        "Multi-turn conversation tracking requires agent to implement conversation history logging",
+        "Grading quality depends on the judge model used"
+      ],
+      "changelog": [
+        "1.0.0: Initial release with full 300 task support"
+      ]
+    }
+  }
+]

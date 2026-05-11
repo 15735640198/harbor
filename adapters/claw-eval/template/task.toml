@@ -1,0 +1,22 @@
+version = "1.0"
+
+[task]
+name = "{task_name}"
+authors = [{ name = "Claw-Eval Team" }]
+
+[metadata]
+difficulty = "medium"
+category = "agent-tasks"
+tags = ["claw-eval"]
+
+[verifier]
+timeout_seconds = 600.0
+
+[agent]
+timeout_seconds = 3600.0
+
+[environment]
+build_timeout_seconds = 300.0
+cpus = 2
+memory_mb = 8192
+storage_mb = 20480

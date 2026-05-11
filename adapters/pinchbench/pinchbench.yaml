@@ -1,0 +1,13 @@
+name: PinchBench Full Benchmark
+dataset: pinchbench
+agent: claude-code
+model: anthropic/claude-3-5-sonnet-20241022
+
+settings:
+  n_concurrent: 3
+  retries: 1
+  timeout: 7200
+
+env:
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  LLM_JUDGE_MODEL: "gpt-5-mini"

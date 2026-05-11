@@ -158,6 +158,23 @@ class Verifier:
                     )
             env = resolve_env_vars(merged_env)
 
+        # Upload task.toml to environment root
+        try:
+            # For POSIX environments, upload to /task.toml
+            target_path = "/task.toml"
+            # For Windows environments, adjust path accordingly
+            if hasattr(env_paths, 'logs_dir') and str(env_paths.logs_dir).startswith("C:/"):
+                target_path = "C:/task.toml"
+            
+            await self._environment.upload_file(
+                source_path=self._task.paths.config_path,
+                target_path=target_path,
+            )
+        except Exception as e:
+            raise AddTestsDirError(
+                "Failed to upload task.toml to environment."
+            ) from e
+
         test_script_path = str(
             env_paths.tests_dir
             / host_test_path.relative_to(tests_source_dir).as_posix()

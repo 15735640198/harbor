@@ -53,7 +53,7 @@ class Task:
         """
         self._task_dir = Path(task_dir).resolve()
         self.paths = TaskPaths(self._task_dir)
-        self.config = TaskConfig.model_validate_toml(self.paths.config_path.read_text())
+        self.config = TaskConfig.model_validate_toml(self.paths.config_path.read_text(encoding="utf-8"))
         if self.config.task is not None:
             self.name = self.config.task.name
         else:
@@ -63,7 +63,7 @@ class Task:
             self._validate_steps()
             self.instruction = ""
         else:
-            self.instruction = strip_canary(self.paths.instruction_path.read_text())
+            self.instruction = strip_canary(self.paths.instruction_path.read_text(encoding="utf-8"))
 
     @property
     def has_steps(self) -> bool:
@@ -71,7 +71,7 @@ class Task:
 
     def step_instruction(self, step_name: str) -> str:
         path = self.paths.step_instruction_path(step_name)
-        return strip_canary(path.read_text())
+        return strip_canary(path.read_text(encoding="utf-8"))
 
     def _validate_steps(self) -> None:
         task_os = self.config.environment.os
