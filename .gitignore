@@ -135,11 +135,11 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+#.env
 .envrc
-.venv
-env/
-venv/
+#.venv
+#env/
+#venv/
 ENV/
 env.bak/
 venv.bak/
@@ -211,7 +211,7 @@ jobs/
 trials/
 *.ipynb
 /tasks/
-/datasets/
+# /datasets/  # 已注释，现在允许上传datasets目录代码
 !examples/tasks/
 *.code-workspace
 ignore/
