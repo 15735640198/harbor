@@ -4,6 +4,7 @@
         "index",
         "publishing",
         "adapters",
+        "adapter-implementation-guide",
         "adapters-human",
         "metrics"
     ]

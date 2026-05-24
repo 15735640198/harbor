@@ -1,0 +1,342 @@
+---
+title: Adapter Implementation Guide
+description: Common implementation patterns for writing Harbor adapters, based on the adapters already in the repository.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+This guide explains the implementation patterns that show up across Harbor adapters in [`adapters/`](https://github.com/harbor-framework/harbor/tree/main/adapters). Use it when you already understand the adapter requirements and want a practical mental model for how adapters are usually written.
+
+<Callout title="Relationship to the other adapter docs">
+This page is an implementation guide. The authoritative requirements still live in [Adapters (Agent Guide)](/docs/datasets/adapters), and the contributor walkthrough is [Adapters (Human Guide)](/docs/datasets/adapters-human).
+</Callout>
+
+## Core Idea
+
+An adapter translates one upstream benchmark task into one Harbor task directory.
+
+In practice, most adapters do the same six things:
+
+1. Load source benchmark data.
+2. Normalize each source record into a local Python object.
+3. Choose a stable Harbor task ID.
+4. Copy or render a task template.
+5. Fill task-specific files such as `instruction.md`, `task.toml`, `tests/*`, and `solution/solve.sh`.
+6. Expose a CLI that writes all generated tasks under `datasets/<adapter-name>`.
+
+There is no single shared `BaseAdapter` used across the whole repository. The contract is mostly conventional rather than enforced by one framework type.
+
+## Preferred Layout
+
+New adapters should use the packaged `src/` layout created by `harbor adapter init`:
+
+```text
+adapters/<adapter-name>/
+├── README.md
+├── adapter_metadata.json
+├── parity_experiment.json
+├── pyproject.toml
+└── src/<adapter_name>/
+    ├── __init__.py
+    ├── adapter.py
+    ├── main.py
+    └── task-template/
+        ├── task.toml
+        ├── instruction.md
+        ├── environment/
+        │   └── Dockerfile
+        ├── solution/
+        │   └── solve.sh
+        └── tests/
+            └── test.sh
+```
+
+You will still see older adapters using a legacy flat layout such as `adapter.py`, `run_adapter.py`, and `template/` at the adapter root. Those are useful references, but not the preferred structure for new work.
+
+## The De Facto Adapter Contract
+
+Most adapters define a class named `<Benchmark>Adapter` with a `run()` method. Common helper methods include:
+
+- `make_local_task_id(...)`
+- `generate_task(...)`
+- `generate_all_tasks(...)`
+- `_prepare_task(...)`
+
+The exact signatures vary, but the shape is consistent:
+
+```python
+class MyBenchmarkAdapter:
+    def __init__(self, output_dir: Path, ...) -> None:
+        self.output_dir = Path(output_dir)
+
+    def make_local_task_id(self, source_id: str) -> str:
+        ...
+
+    def generate_task(self, ...) -> Path | None:
+        ...
+
+    def run(self) -> None:
+        ...
+```
+
+Representative examples:
+
+- [`adapters/simpleqa/src/simpleqa/adapter.py`](https://github.com/harbor-framework/harbor/blob/main/adapters/simpleqa/src/simpleqa/adapter.py)
+- [`adapters/deepsynth/src/deepsynth/adapter.py`](https://github.com/harbor-framework/harbor/blob/main/adapters/deepsynth/src/deepsynth/adapter.py)
+- [`adapters/swebench/src/swebench_adapter/adapter.py`](https://github.com/harbor-framework/harbor/blob/main/adapters/swebench/src/swebench_adapter/adapter.py)
+
+## The Three Layers Most Adapters Have
+
+### 1. Source loading
+
+First, load upstream benchmark data from whatever source the benchmark uses:
+
+- Hugging Face datasets
+- CSV or JSON files
+- pre-existing task directories
+- a benchmark-specific Python package
+
+Keep source loading separate from Harbor rendering when possible. A common pattern is to convert raw rows into a small dataclass or task object before generating files.
+
+Examples:
+
+- `SimpleQATask` in `simpleqa`
+- `DeepSynthTask` in `deepsynth`
+- `SWEBenchRecord` in `swebench`
+
+This separation makes it much easier to validate field mapping and test task generation.
+
+### 2. Template rendering
+
+Most adapters generate Harbor tasks from a static template directory and then substitute task-specific values.
+
+Typical files to render or copy:
+
+- `task.toml`
+- `instruction.md`
+- `environment/Dockerfile`
+- `tests/test.sh`
+- `tests/test_*.py`
+- `solution/solve.sh`
+
+The implementation style is usually one of these:
+
+- Copy fixed files as-is with `shutil.copy2(...)`
+- Read a template as text, then replace placeholders
+- Copy a whole template tree, then rewrite a few files
+
+### 3. Task emission
+
+For each source task, the adapter creates one output directory and writes a complete Harbor task:
+
+```text
+datasets/<adapter-name>/<task-id>/
+├── task.toml
+├── instruction.md
+├── environment/
+├── tests/
+└── solution/
+```
+
+Treat the generated task as a self-contained artifact. The adapter’s job is not only to import metadata, but to produce a runnable Harbor task with an environment, verifier, and usually an oracle.
+
+## Stable Task IDs
+
+Stable naming is one of the most important parts of adapter design.
+
+Good task IDs are:
+
+- deterministic across runs
+- safe as directory names
+- safe to embed in `task.toml [task].name`
+- independent of iteration order or transient metadata
+
+Common patterns:
+
+- preserve upstream IDs when they are already stable
+- lowercase and replace underscores/spaces with hyphens
+- add benchmark/category prefixes where collisions are possible
+- include config or split information when one source benchmark can generate multiple task variants
+
+Examples:
+
+- `simpleqa-123`
+- `reasoning-gym-algebra-complex-arithmetic-...`
+- raw `instance_id` passthrough for SWE-bench style tasks
+
+If the upstream benchmark does not expose stable IDs, create your own deterministic scheme from a reproducible ordering.
+
+## The Template-First Pattern
+
+The most common Harbor adapter pattern is:
+
+1. Keep a minimal `task-template/` in the adapter package.
+2. Copy the static parts into the destination task directory.
+3. Replace placeholders in a small number of files.
+4. Add generated assets such as `ground_truth.json`, `config.json`, or benchmark-specific verifier scripts.
+
+This is usually better than constructing every file from scratch because:
+
+- the Harbor task shape stays visible on disk
+- updates are localized to template files
+- task generation logic stays small
+- it is easier to diff generated output against the template
+
+## Three Common Adapter Styles
+
+### Pure data-to-task adapters
+
+These benchmarks are mostly structured records. The adapter writes prompts, tests, and an oracle directly from fields in the dataset.
+
+Examples:
+
+- `simpleqa`
+- `deepsynth`
+- `aime`
+
+### Prebuilt-task mappers
+
+These benchmarks already ship something close to a task directory. The adapter mostly copies assets and rewrites them into Harbor’s layout or metadata schema.
+
+Examples:
+
+- `abc-bench`
+- `compilebench`
+
+### Heavy transformation adapters
+
+These benchmarks need more benchmark-specific logic such as patch rewriting, task filtering, generated configs, custom evaluation assets, or prompt adaptation for CLI agents.
+
+Examples:
+
+- `swebench`
+- `featurebench`
+- `reasoning-gym`
+- `pixiu`
+
+## `main.py` Is Usually Small
+
+The CLI entry point is usually thin. Its job is to:
+
+- parse standard flags
+- choose a default output directory
+- instantiate the adapter
+- call `adapter.run()`
+
+The expected core flags are:
+
+- `--output-dir`
+- `--limit`
+- `--overwrite`
+- `--task-ids`
+
+Benchmark-specific flags are fine when needed, for example split selection, parity subset generation, GPU/Modal modes, or source directory overrides.
+
+## What Belongs in `task.toml`
+
+Adapters commonly render a `task.toml` template and customize:
+
+- `[task].name`
+- `[task].authors`
+- `[task].keywords`
+- `[metadata].difficulty`
+- `[metadata].category`
+- timeout/resource settings
+- verifier environment variables for judge-based tasks
+
+The Harbor-side rule is simple: make the generated `task.toml` describe the actual adapted task, not just the upstream benchmark row.
+
+## Patterns for Tests and Oracles
+
+Most adapters follow one of these verifier patterns:
+
+- deterministic unit/integration tests under `tests/`
+- one wrapper `test.sh` that writes reward to `/logs/verifier/reward.txt`
+- LLM-as-a-Judge verifier scripts with judge prompt/assets copied into `tests/`
+
+For oracle support, many adapters also render `solution/solve.sh`. This matters because Harbor expects contributors to verify the dataset with the `oracle` agent whenever possible.
+
+If the upstream benchmark lacks oracle solutions, that becomes part of the adapter design problem rather than something to ignore. See the main adapter guides for policy and review expectations.
+
+## Error Handling Patterns
+
+The better adapters explicitly guard:
+
+- dataset download failures
+- missing template files
+- bad task IDs or unknown source IDs
+- existing output directories when `--overwrite` is false
+- malformed JSON/CSV fields from upstream sources
+
+Keep these checks near the load and render boundaries. Most adapters do not need deep abstraction; they do need clear failure modes.
+
+## Things That Frequently Go Wrong
+
+### Escaping injected content
+
+If benchmark content is inserted into shell, Python, JSON, or TOML, escape it for the target format. A frequent source of broken adapters is correct source data written into the wrong quoting context.
+
+### Unstable task naming
+
+If task IDs depend on enumeration order or non-normalized strings, rerunning the adapter can churn task names and break dataset publishing.
+
+### Partial Harbor tasks
+
+Do not treat `instruction.md` as the whole adaptation. The generated task still needs a valid environment and verifier path.
+
+### Harbor-only simplifications
+
+Do not silently weaken tests, shorten the task in a way that changes behavior, or exclude hard tasks without documentation. Special handling is acceptable only when it is justified and documented.
+
+### Mixing source parsing with file writing
+
+Small adapters can get away with this, but it becomes hard to debug quickly. A lightweight task object or record dataclass usually pays for itself.
+
+## Practical Design Checklist
+
+Before writing code, answer these questions:
+
+1. Where does the source benchmark store instructions, environments, tests, and solutions?
+2. What should one Harbor task directory contain for one upstream task?
+3. What is the stable Harbor task ID?
+4. Which files are copied unchanged, and which are rendered?
+5. How will `tests/test.sh` compute reward?
+6. Can `solution/solve.sh` be provided?
+7. What benchmark-specific exclusions, patches, or prompt adaptations are required?
+
+If you can answer those clearly, the adapter implementation itself is usually straightforward.
+
+## Suggested Workflow
+
+1. Scaffold the adapter with `harbor adapter init`.
+2. Create the `task-template/` directory first.
+3. Implement source loading and task ID normalization.
+4. Implement `generate_task(...)` for one task.
+5. Generate one or two tasks locally and inspect them by hand.
+6. Implement `run()` for all tasks plus filtering flags.
+7. Verify oracle behavior and only then scale out to parity work.
+
+## Examples to Study
+
+If you want examples by complexity:
+
+- Simple template renderer: [`simpleqa`](https://github.com/harbor-framework/harbor/tree/main/adapters/simpleqa)
+- Small but careful string rendering: [`deepsynth`](https://github.com/harbor-framework/harbor/tree/main/adapters/deepsynth)
+- Structured task-path helper pattern: [`swebench`](https://github.com/harbor-framework/harbor/tree/main/adapters/swebench)
+- Existing task corpus remapping: [`abc-bench`](https://github.com/harbor-framework/harbor/tree/main/adapters/abc-bench)
+- Heavier benchmark-specific transformation: [`featurebench`](https://github.com/harbor-framework/harbor/tree/main/adapters/featurebench)
+
+## Summary
+
+The key Harbor adapter pattern is simple: convert one upstream benchmark task into one complete Harbor task directory, using a template-first workflow and stable task naming.
+
+There is plenty of variation in benchmark-specific logic, but most adapters still share the same backbone:
+
+- source loader
+- task record normalization
+- stable ID generation
+- template rendering
+- task directory emission
+- small CLI calling `run()`
+
+If you follow that shape, your adapter will match the way the repository already works and will be much easier to review and maintain.
