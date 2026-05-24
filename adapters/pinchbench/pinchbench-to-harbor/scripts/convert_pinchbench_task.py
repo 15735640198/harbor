@@ -21,6 +21,8 @@ import yaml
 
 DEFAULT_JUDGE_MODEL = "claude-haiku-4-5"
 DEFAULT_ORG = "pinchbench"
+SCRIPT_DIR = Path(__file__).resolve().parent
+ENVIRONMENT_DOCKERFILE_TEMPLATE = SCRIPT_DIR / "Dockerfile"
 
 
 def main() -> None:
@@ -54,6 +56,7 @@ def main() -> None:
         output_dir=output_dir,
         org=args.org,
         judge_model=args.judge_model,
+        source_label=args.source_label or str(task_md),
     )
     print(output_dir)
 
@@ -88,6 +91,10 @@ def parse_args() -> argparse.Namespace:
         "--judge-model",
         default=DEFAULT_JUDGE_MODEL,
         help="Verifier MODEL_NAME for generated LLM judge tasks.",
+    )
+    parser.add_argument(
+        "--source-label",
+        help="Value to write to task.toml source. Defaults to the task markdown path.",
     )
     parser.add_argument(
         "--overwrite",
@@ -165,6 +172,7 @@ def build_harbor_task(
     output_dir: Path,
     org: str,
     judge_model: str,
+    source_label: str,
 ) -> None:
     grading_type = task["grading_type"]
     if grading_type not in {"automated", "llm_judge", "hybrid"}:
@@ -182,6 +190,7 @@ def build_harbor_task(
         output_path=output_dir / "task.toml",
         org=org,
         judge_model=judge_model,
+        source_label=source_label,
     )
 
     if task["multi_session"] and task["sessions"]:
@@ -200,6 +209,7 @@ def build_harbor_task(
 def stage_workspace_files(
     task: dict[str, Any], pinchbench_root: Path, workspace_dir: Path
 ) -> None:
+    workspace_dir.mkdir(parents=True, exist_ok=True)
     workspace_files = task["workspace_files"]
     if not workspace_files:
         return
@@ -256,28 +266,11 @@ def resolve_workspace_source(pinchbench_root: Path, source: str) -> Path:
 
 
 def write_environment_dockerfile(path: Path) -> None:
-    text = """\
-FROM ubuntu:24.04
-
-RUN apt-get update \\
-    && apt-get install -y --no-install-recommends \\
-        ca-certificates \\
-        curl \\
-        git \\
-        jq \\
-        nodejs \\
-        npm \\
-        python3 \\
-        python3-pip \\
-        python3-venv \\
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-WORKDIR /app
-COPY workspace/ /app/
-"""
-    write_text(path, text)
+    if not ENVIRONMENT_DOCKERFILE_TEMPLATE.exists():
+        raise FileNotFoundError(
+            f"Harbor environment Dockerfile template not found: {ENVIRONMENT_DOCKERFILE_TEMPLATE}"
+        )
+    shutil.copy2(ENVIRONMENT_DOCKERFILE_TEMPLATE, path)
 
 
 def write_task_toml(
@@ -287,12 +280,13 @@ def write_task_toml(
     output_path: Path,
     org: str,
     judge_model: str,
+    source_label: str,
 ) -> None:
     timeout = float(task["timeout_seconds"])
     tags = ["pinchbench", task["category"], task["grading_type"]]
     lines = [
         'schema_version = "1.1"',
-        f"source = {toml_string(str(task_md))}",
+        f"source = {toml_string(source_label)}",
     ]
     if task["multi_session"] and task["sessions"]:
         lines.append('multi_step_reward_strategy = "final"')

@@ -1,0 +1,30 @@
+[
+  {
+    "adapter_name": "pinchbench",
+    "adapter_builders": [],
+    "original_benchmark": [
+      {
+        "split": "tasks",
+        "size": 147,
+        "harness": "pinchbench",
+        "supported_agents": null,
+        "adaptable": true,
+        "notes": "Pinchbench task markdown files under related-projects/external-tasks/skill/tasks."
+      }
+    ],
+    "harbor_adapter": [
+      {
+        "split": "full",
+        "adapted_benchmark_size": 147,
+        "parity_benchmark_size": 21,
+        "parity_sampling_rate": 0.14286,
+        "registry_benchmark_size": 147,
+        "added_agents": [],
+        "parity_matching_agents": null,
+        "parity_unmatching_agents": null,
+        "parity_costs": null,
+        "notes": "Conversion is driven by the adapter-local pinchbench-to-harbor skill through a Claude Code harness by default."
+      }
+    ]
+  }
+]
