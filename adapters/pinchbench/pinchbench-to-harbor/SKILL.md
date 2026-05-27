@@ -28,7 +28,7 @@ For tasks outside the standard submodule location, pass `--pinchbench-root` poin
 3. Copy this skill's `scripts/Dockerfile` to the generated task's `environment/Dockerfile`.
 4. Copy `workspace_files` into `environment/workspace/`; the Dockerfile copies that tree into `/app`.
 5. For `automated` tasks, run the embedded Pinchbench `grade(transcript, workspace_path)` function directly in the verifier and write `/logs/verifier/reward.json`.
-6. For `llm_judge` tasks, generate a Harbor-style `uv run /tests/llm_judge.py` verifier using Anthropic structured JSON output, modeled after `examples/tasks/llm-judge-example`.
+6. For `llm_judge` tasks, generate a Harbor-style `uv run /tests/llm_judge.py` verifier using a prompt-only JSON response contract. Do not use provider-specific structured-output request fields such as Anthropic `output_config`.
 7. For `hybrid` tasks, run deterministic automated scoring first, run the LLM judge second, then combine scores with Pinchbench `grading_weights` or a 0.5/0.5 default.
 
 ## Review Points
@@ -36,6 +36,7 @@ For tasks outside the standard submodule location, pass `--pinchbench-root` poin
 - Keep automated checks deterministic. Do not call an LLM to execute or reinterpret the `## Automated Checks` Python code.
 - Inspect generated verifier scripts when automated checks depend on transcript tool calls. The converter provides best-effort transcript loading from `/logs/agent`, but workspace-state checks are more reliable across agents.
 - For LLM judge tasks, keep judge API keys in `[verifier.env]` and never expose rubric-only answer material in `/app`.
+- For LLM judge requests, tell the model the required JSON shape in the prompt and parse/coerce the returned text; do not rely on model/provider response-format parameters.
 - Do not synthesize the Harbor environment Dockerfile inline; use `scripts/Dockerfile` from this skill as the environment template.
 - For `workspace_files.source`, copy from Pinchbench `assets/` into Harbor `environment/workspace/`; tests remain hidden in `tests/`.
 - For multi-session Pinchbench tasks, the converter creates Harbor steps and uses `multi_step_reward_strategy = "final"`. Non-final step verifiers write `1.0`; the final step runs the real verifier.

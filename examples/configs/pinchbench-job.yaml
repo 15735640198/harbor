@@ -9,9 +9,17 @@ environment:
   type: docker
   force_build: true
   delete: true
+verifier:
+  env:
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+    MODEL_NAME: glm-5.1
 agents:
   - name: openclaw
-    model_name: anthropic/glm-5.1
+    model_name: anthropic/kimi-k2.6
+    kwargs:
+      context_window: 200000
+      max_tokens: 8192
     env:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}

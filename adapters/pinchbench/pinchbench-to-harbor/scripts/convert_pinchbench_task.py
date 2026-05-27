@@ -330,6 +330,7 @@ def write_task_toml(
                 "",
                 "[verifier.env]",
                 'ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"',
+                'ANTHROPIC_BASE_URL = "${ANTHROPIC_BASE_URL:-}"',
                 f"MODEL_NAME = {toml_string(judge_model)}",
             ]
         )
@@ -684,7 +685,7 @@ def write_reward(payload: dict[str, float | int]) -> None:
 GENERATED_LLM_HELPERS_PY = """
 import os
 
-from anthropic import Anthropic, transform_schema
+from anthropic import Anthropic
 from pydantic import BaseModel, Field
 
 
@@ -747,7 +748,9 @@ def build_judge_prompt(task_prompt: str, expected_behavior: str, rubric: str) ->
     workspace_section = f"## Workspace Files Created or Available\\n{workspace}\\n\\n" if workspace else ""
     transcript_section = f"## Agent Transcript Summary\\n{transcript}\\n\\n" if transcript else ""
     return (
-        "You are a grading function. Output only the JSON object requested by the schema.\\n"
+        "You are a grading function. Output only a valid JSON object, with no markdown fences or extra text.\\n"
+        'Use exactly this shape: {"scores": {"criterion_name": 0.0}, "total": 0.0, "notes": "short rationale"}.\\n'
+        "Each score and total must be a number from 0.0 to 1.0.\\n"
         "Be strict: reserve 1.0 for excellent performance and use partial credit.\\n\\n"
         "## Task\\n"
         f"{task_prompt}\\n\\n"
@@ -761,6 +764,94 @@ def build_judge_prompt(task_prompt: str, expected_behavior: str, rubric: str) ->
     )
 
 
+def extract_response_text(response: Any) -> str:
+    for block in getattr(response, "content", []):
+        text = getattr(block, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text
+        if isinstance(block, dict):
+            text = block.get("text")
+            if isinstance(text, str) and text.strip():
+                return text
+    raise ValueError("LLM judge response did not include a text content block")
+
+
+def parse_judge_response(text: str) -> JudgeResponse:
+    candidates = [text]
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start : end + 1])
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            return JudgeResponse.model_validate_json(candidate)
+        except Exception as exc:
+            last_error = exc
+        try:
+            payload = json.loads(candidate)
+            return JudgeResponse.model_validate(coerce_judge_payload(payload))
+        except Exception as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise last_error
+    raise ValueError("LLM judge response did not contain JSON")
+
+
+def coerce_judge_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("LLM judge JSON response must be an object")
+
+    data = dict(payload)
+    if "total" not in data:
+        for key in ("Total", "overall", "Overall", "score", "Score", "reward", "Reward"):
+            value = data.get(key)
+            if isinstance(value, (int, float)):
+                data["total"] = clamp01(value)
+                break
+
+    if not isinstance(data.get("scores"), dict):
+        excluded = {
+            "total",
+            "Total",
+            "overall",
+            "Overall",
+            "score",
+            "Score",
+            "reward",
+            "Reward",
+            "notes",
+            "Notes",
+            "explanation",
+            "Explanation",
+            "reasoning",
+            "Reasoning",
+        }
+        scores = {
+            str(key): clamp01(value)
+            for key, value in data.items()
+            if key not in excluded and isinstance(value, (int, float))
+        }
+        if scores:
+            data["scores"] = scores
+
+    if "total" not in data and isinstance(data.get("scores"), dict):
+        data["total"] = average_scores(data["scores"])
+
+    if "notes" not in data:
+        for key in ("Notes", "explanation", "Explanation", "reasoning", "Reasoning"):
+            value = data.get(key)
+            if isinstance(value, str):
+                data["notes"] = value
+                break
+        else:
+            data["notes"] = ""
+
+    return data
+
+
 def run_llm_judge(
     *, task_prompt: str, expected_behavior: str, rubric: str
 ) -> tuple[float, dict[str, float], str]:
@@ -768,15 +859,14 @@ def run_llm_judge(
     if not api_key:
         return 0.0, {}, "ANTHROPIC_API_KEY is not set"
 
-    client = Anthropic(api_key=api_key)
-    schema = transform_schema(JudgeResponse.model_json_schema())
+    base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip() or None
+    client = Anthropic(api_key=api_key, base_url=base_url)
     response = client.messages.create(
         model=os.getenv("MODEL_NAME", "claude-haiku-4-5"),
         max_tokens=2048,
-        output_config={"format": {"type": "json_schema", "schema": schema}},
         messages=[{"role": "user", "content": build_judge_prompt(task_prompt, expected_behavior, rubric)}],
     )
-    result = JudgeResponse.model_validate_json(response.content[0].text)
+    result = parse_judge_response(extract_response_text(response))
     return clamp01(result.total), normalize_scores(result.scores), result.notes
 """
 
