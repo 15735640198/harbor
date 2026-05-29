@@ -487,7 +487,11 @@ if (!sessionCopied) {{
     const sessDir = path.join(process.env.HOME, ".openclaw", "agents", "main", "sessions");
     if (fs.existsSync(sessDir)) {{
         const files = fs.readdirSync(sessDir)
-            .filter(f => f.endsWith(".jsonl") && !f.endsWith(".lock"))
+            .filter(f =>
+                f.endsWith(".jsonl") &&
+                !f.endsWith(".trajectory.jsonl") &&
+                !f.endsWith(".lock")
+            )
             .map(f => ({{ name: f, mtime: fs.statSync(path.join(sessDir, f)).mtimeMs }}))
             .sort((a, b) => b.mtime - a.mtime);
         if (files.length > 0) {{
@@ -708,12 +712,15 @@ COPY_SESSION_EOF
             return None
 
         jsonl_files = sorted(
-            sessions_dir.glob("*.jsonl"),
+            (
+                path
+                for path in sessions_dir.glob("*.jsonl")
+                if not path.name.endswith(".trajectory.jsonl")
+                and not path.name.endswith(".lock")
+            ),
             key=lambda f: f.stat().st_mtime,
             reverse=True,
         )
-        # Filter out .lock files
-        jsonl_files = [f for f in jsonl_files if not f.name.endswith(".lock")]
 
         if not jsonl_files:
             return None

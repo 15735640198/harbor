@@ -156,6 +156,24 @@ def test_openclaw_emits_atif_1_7_metadata(tmp_path: Path):
     assert data["steps"][1]["llm_call_count"] == 0
 
 
+def test_openclaw_session_discovery_ignores_generated_trajectory_jsonl(
+    tmp_path: Path,
+):
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        extra_env={"ANTHROPIC_API_KEY": "test-key"},
+    )
+    sessions_dir = tmp_path / "openclaw-sessions"
+    sessions_dir.mkdir()
+
+    raw_session = sessions_dir / "session-123.jsonl"
+    generated_trajectory = sessions_dir / "session-123.trajectory.jsonl"
+    raw_session.write_text('{"type":"session","id":"session-123"}\n')
+    generated_trajectory.write_text('{"traceSchema":"openclaw-trajectory"}\n')
+
+    assert agent._discover_session_id_from_dir() == "session-123"
+
+
 class _FakeEnvironment:
     def __init__(self, missing_packages: str):
         self.missing_packages = missing_packages
