@@ -5,6 +5,7 @@
         "publishing",
         "adapters",
         "benchmark-migration-guide",
+        "wildclawbench-migration",
         "adapter-implementation-guide",
         "adapters-human",
         "metrics"

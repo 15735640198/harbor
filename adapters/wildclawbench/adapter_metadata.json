@@ -1,0 +1,35 @@
+[
+  {
+    "adapter_name": "wildclawbench",
+    "adapter_builders": [],
+    "original_benchmark": [
+      {
+        "split": "tasks",
+        "size": 60,
+        "harness": "wildclawbench",
+        "supported_agents": [
+          "openclaw",
+          "claude-code",
+          "codex",
+          "hermes-agent"
+        ],
+        "adaptable": true,
+        "notes": "WildClawBench task markdown files under related-projects/external-tasks/WildClawBench/tasks with external workspace data on Hugging Face."
+      }
+    ],
+    "harbor_adapter": [
+      {
+        "split": "full",
+        "adapted_benchmark_size": 60,
+        "parity_benchmark_size": 0,
+        "parity_sampling_rate": 0.0,
+        "registry_benchmark_size": 60,
+        "added_agents": [],
+        "parity_matching_agents": null,
+        "parity_unmatching_agents": null,
+        "parity_costs": null,
+        "notes": "Parity-oriented conversion preserves /tmp_workspace, warmups, skills, and embedded upstream graders."
+      }
+    ]
+  }
+]

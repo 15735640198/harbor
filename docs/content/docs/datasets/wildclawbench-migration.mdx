@@ -1,0 +1,70 @@
+---
+title: WildClawBench Migration
+description: Notes for migrating WildClawBench into Harbor with parity-oriented task generation.
+---
+
+WildClawBench is migrated through a parity adapter in `adapters/wildclawbench`.
+The adapter preserves the upstream task contract instead of rewriting tasks into
+a generic Harbor `/app` layout.
+
+## Source Layout
+
+The upstream repository is expected at
+`related-projects/external-tasks/WildClawBench`. Tasks are Markdown files under
+`tasks/<category>/`, while large workspace data is downloaded separately from
+the Hugging Face dataset.
+
+Before generating the Harbor dataset, prepare the upstream workspace:
+
+```bash
+hf download internlm/WildClawBench workspace \
+  --repo-type dataset \
+  --local-dir related-projects/external-tasks/WildClawBench
+
+bash related-projects/external-tasks/WildClawBench/script/prepare.sh
+```
+
+Load the upstream base image:
+
+```bash
+hf download internlm/WildClawBench Images/wildclawbench-ubuntu_v1.3.tar \
+  --repo-type dataset \
+  --local-dir related-projects/external-tasks/WildClawBench
+
+docker load -i related-projects/external-tasks/WildClawBench/Images/wildclawbench-ubuntu_v1.3.tar
+```
+
+## Harbor Mapping
+
+Each WildClawBench task becomes a one-step Harbor task. The step layout lets
+Harbor run upstream warmup commands before the agent starts.
+
+- Agent-visible files come from upstream `workspace/.../exec`.
+- Hidden ground-truth files from upstream `workspace/.../gt` are copied only to
+  Harbor `tests/`.
+- Requested skills are copied from upstream `skills/` into `/skills` in the
+  generated environment.
+- The generated environment uses `/tmp_workspace` as the workdir and symlinks
+  `/app` to `/tmp_workspace`.
+- The embedded upstream `grade(...)` function is executed directly during
+  verification.
+
+## Running
+
+Generate tasks:
+
+```bash
+uv run python adapters/wildclawbench/src/wildclawbench_adapter/main.py \
+  --output-dir datasets/wildclawbench \
+  --overwrite
+```
+
+Run with the default config, which mirrors the PinchBench job model settings:
+
+```bash
+uv run harbor run -c examples/configs/wildclawbench-job.yaml
+```
+
+The default config uses OpenClaw with `anthropic/kimi-k2.6` and the verifier
+model `glm-5.1`. The generated verifier aliases `OPENROUTER_*` variables from
+`ANTHROPIC_*` variables when only the PinchBench-style config is present.

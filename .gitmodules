@@ -1,3 +1,6 @@
 [submodule "related-projects/external-tasks/skill"]
 	path = related-projects/external-tasks/skill
 	url = https://github.com/pinchbench/skill.git
+[submodule "related-projects/external-tasks/WildClawBench"]
+	path = related-projects/external-tasks/WildClawBench
+	url = https://github.com/InternLM/WildClawBench.git

@@ -1,4 +1,7 @@
 - migrate test cases into a harbor-tasks repo
 
-trajectory bench ideas:
+ideas:
+- multi-step conversation evals
 - replayable environment
+- fault injection
+- skill triggering timing benchmark
