@@ -8,6 +8,90 @@ traces_app = Typer(
 )
 
 
+def _resolve_trajectory_file(path: Path) -> Path:
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        raise ValueError(f"Path does not exist: {path}")
+
+    candidates = [
+        path / "agent" / "trajectory.json",
+        path / "trajectory.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    raise ValueError(
+        "Expected a trajectory JSON file, a trial directory containing "
+        "agent/trajectory.json, or a directory containing trajectory.json"
+    )
+
+
+@traces_app.command("blocks")
+def blocks(
+    path: Annotated[
+        Path,
+        Option(
+            "--path",
+            "-p",
+            help="Path to an ATIF trajectory.json file or trial directory",
+        ),
+    ],
+    out: Annotated[
+        Path | None,
+        Option(
+            "--out",
+            "-o",
+            help="Directory to write paper-style block analysis files",
+            show_default=False,
+        ),
+    ] = None,
+    ngram_size: Annotated[
+        int,
+        Option("--ngram-size", help="Action-category n-gram length"),
+    ] = 4,
+    include_copied_context: Annotated[
+        bool,
+        Option(
+            "--include-copied-context/--exclude-copied-context",
+            help="Include ATIF steps marked as copied context",
+        ),
+    ] = False,
+):
+    """Parse ATIF trajectories into thought/action/result blocks."""
+    import json
+
+    from harbor.utils.trajectory_blocks import (
+        parse_trajectory_file,
+        write_trajectory_block_analysis,
+    )
+
+    trajectory_path = _resolve_trajectory_file(path)
+    if out is None:
+        parsed = parse_trajectory_file(
+            trajectory_path,
+            include_copied_context=include_copied_context,
+        )
+        print(
+            json.dumps(
+                [block.model_dump(mode="json") for block in parsed],
+                indent=2,
+            )
+        )
+        return
+
+    written = write_trajectory_block_analysis(
+        trajectory_path,
+        out,
+        ngram_size=ngram_size,
+        include_copied_context=include_copied_context,
+    )
+    print(f"Parsed {trajectory_path} into {out}")
+    for name, written_path in written.items():
+        print(f"{name}: {written_path}")
+
+
 @traces_app.command("export")
 def export(
     path: Annotated[

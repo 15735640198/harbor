@@ -19,6 +19,7 @@ agents:
   - name: openclaw
     model_name: anthropic/kimi-k2.6
     kwargs:
+      version: "2026.5.27"
       context_window: 200000
       max_tokens: 8192
     env:

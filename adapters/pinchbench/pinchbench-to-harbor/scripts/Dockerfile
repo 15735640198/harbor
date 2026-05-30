@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG OPENCLAW_VERSION=2026.5.27
+
 ENV NVM_DIR=/root/.nvm
 
 RUN apt-get update \
@@ -21,7 +23,7 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | b
     && nvm install 22 \
     && nvm use 22 \
     && nvm alias default 22 \
-    && npm install -g --ignore-scripts --no-audit openclaw@latest \
+    && npm install -g --ignore-scripts --no-audit "openclaw@${OPENCLAW_VERSION}" \
     && ln -s "$(command -v node)" /usr/local/bin/node \
     && ln -s "$(command -v npm)" /usr/local/bin/npm \
     && ln -s "$(command -v npx)" /usr/local/bin/npx \

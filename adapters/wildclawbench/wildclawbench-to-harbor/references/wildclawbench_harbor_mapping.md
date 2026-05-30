@@ -49,9 +49,17 @@ The adapter emits one Harbor multi-step task per upstream task:
 - `tests/run_wildclawbench_grade.py`
 - `tests/gt/...` when upstream hidden ground truth exists
 
-The generated Dockerfile uses `wildclawbench-ubuntu:v1.3` by default, sets
-`WORKDIR /tmp_workspace`, and symlinks `/app` to `/tmp_workspace` for Harbor
-agent compatibility.
+The generated Dockerfile uses `wildclawbench-ubuntu-openclaw:2026.5.27` by
+default. That image is built with `FROM wildclawbench-ubuntu:v1.3` and a pinned
+OpenClaw install. Generated task Dockerfiles pin `--platform=linux/amd64`
+because upstream WildClawBench images are amd64-only. Generated tasks set
+`WORKDIR /tmp_workspace` and symlink `/app` to `/tmp_workspace` for Harbor agent
+compatibility.
+
+For full local generation, pass `--link-assets` to hardlink prepared workspace
+and hidden `gt/` files into generated tasks. This preserves Docker-visible
+normal files while avoiding a second physical copy of the large WildClawBench
+workspace when output and workspace directories share a filesystem.
 
 ## Verifier Mapping
 
@@ -82,6 +90,8 @@ The default example job mirrors `examples/configs/pinchbench-job.yaml`:
 
 - OpenClaw agent
 - `model_name: anthropic/kimi-k2.6`
+- `version: 2026.5.27` to verify and reuse the OpenClaw binary cached in
+  `wildclawbench-ubuntu-openclaw:2026.5.27`
 - `context_window: 200000`
 - `max_tokens: 8192`
 - verifier `MODEL_NAME: glm-5.1`
@@ -89,7 +99,8 @@ The default example job mirrors `examples/configs/pinchbench-job.yaml`:
 ## Manual Review Checklist
 
 - Confirm upstream workspace data was downloaded and `script/prepare.sh` ran.
-- Confirm `wildclawbench-ubuntu:v1.3` is loaded locally before running tasks.
+- Confirm `wildclawbench-ubuntu:v1.3` is loaded locally and the derived
+  `wildclawbench-ubuntu-openclaw:2026.5.27` image is built before running tasks.
 - Confirm generated `environment/` trees do not contain upstream `gt/`.
 - Inspect tasks with warmup services, especially Social Interaction tasks, to
   ensure background service commands stay running.

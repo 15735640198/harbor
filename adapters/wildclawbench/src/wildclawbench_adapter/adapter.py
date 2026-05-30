@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import shlex
@@ -28,7 +29,8 @@ HARBOR_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_SOURCE_DIR = (
     HARBOR_ROOT / "related-projects" / "external-tasks" / "WildClawBench"
 )
-DEFAULT_BASE_IMAGE = "wildclawbench-ubuntu:v1.3"
+DEFAULT_BASE_IMAGE = "wildclawbench-ubuntu-openclaw:2026.5.27"
+DEFAULT_BASE_PLATFORM = "linux/amd64"
 RUN_STEP_NAME = "run"
 WORKDIR = "/tmp_workspace"
 
@@ -39,6 +41,13 @@ DEFAULT_CATEGORY_ORDER = (
     "04_Search_Retrieval",
     "05_Creative_Synthesis",
     "06_Safety_Alignment",
+)
+
+EMPTY_EXEC_WORKSPACE_TASK_IDS = frozenset(
+    {
+        "01_Productivity_Flow_task_1_arxiv_digest",
+        "01_Productivity_Flow_task_9_scp_crawl",
+    }
 )
 
 
@@ -78,6 +87,8 @@ class WildClawBenchAdapter:
         overwrite: bool = False,
         task_ids: list[str] | None = None,
         base_image: str = DEFAULT_BASE_IMAGE,
+        base_platform: str = DEFAULT_BASE_PLATFORM,
+        link_assets: bool = False,
         strict_assets: bool = True,
         org: str = "wildclawbench",
         verifier_model: str = "glm-5.1",
@@ -92,6 +103,8 @@ class WildClawBenchAdapter:
         self.overwrite = overwrite
         self.task_ids = task_ids
         self.base_image = base_image
+        self.base_platform = base_platform
+        self.link_assets = link_assets
         self.strict_assets = strict_assets
         self.org = org
         self.verifier_model = verifier_model
@@ -211,27 +224,35 @@ class WildClawBenchAdapter:
         gt_dir = task_workspace / "gt"
 
         if not exec_dir.exists():
-            if self.strict_assets:
+            if task.source_id in EMPTY_EXEC_WORKSPACE_TASK_IDS:
+                logger.info(
+                    "No upstream exec/ for %s; generating an empty agent workspace",
+                    task.source_id,
+                )
+            elif self.strict_assets:
                 raise FileNotFoundError(_missing_assets_message(task, task_workspace))
-            logger.warning(
-                "Missing exec/ for %s; generating an empty agent workspace",
-                task.source_id,
-            )
+            else:
+                logger.warning(
+                    "Missing exec/ for %s; generating an empty agent workspace",
+                    task.source_id,
+                )
         elif not exec_dir.is_dir():
             raise NotADirectoryError(f"Expected exec/ directory: {exec_dir}")
         else:
-            copy_dir_contents(exec_dir, workspace_out)
+            copy_dir_contents(exec_dir, workspace_out, link_files=self.link_assets)
 
         if tmp_dir.exists():
             if not tmp_dir.is_dir():
                 raise NotADirectoryError(f"Expected tmp/ directory: {tmp_dir}")
-            copy_dir_contents(tmp_dir, workspace_out / "tmp")
+            copy_dir_contents(
+                tmp_dir, workspace_out / "tmp", link_files=self.link_assets
+            )
 
         if not gt_dir.exists():
             return False
         if not gt_dir.is_dir():
             raise NotADirectoryError(f"Expected gt/ directory: {gt_dir}")
-        shutil.copytree(gt_dir, root_tests_dir / "gt", symlinks=True)
+        copy_tree(gt_dir, root_tests_dir / "gt", link_files=self.link_assets)
         return True
 
     def _stage_skills(self, task: WildClawBenchTask, skills_out: Path) -> bool:
@@ -362,9 +383,12 @@ class WildClawBenchAdapter:
         skills_block = (
             "COPY skills/ /skills/" if copied_skills else "RUN mkdir -p /skills"
         )
+        from_line = f"FROM {self.base_image}"
+        if self.base_platform:
+            from_line = f"FROM --platform={self.base_platform} {self.base_image}"
         return textwrap.dedent(
             f"""\
-            FROM {self.base_image}
+            {from_line}
 
             RUN mkdir -p {WORKDIR} \\
                 && rm -rf /app \\
@@ -523,18 +547,47 @@ def extract_python_code(section_text: str) -> str:
     return stripped.rstrip() + "\n"
 
 
-def copy_dir_contents(source: Path, dest: Path) -> None:
+def copy_tree(source: Path, dest: Path, *, link_files: bool = False) -> None:
+    shutil.copytree(
+        source,
+        dest,
+        symlinks=True,
+        copy_function=(hardlink_or_copy_file if link_files else shutil.copy2),
+    )
+
+
+def copy_dir_contents(source: Path, dest: Path, *, link_files: bool = False) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     for child in source.iterdir():
         target = dest / child.name
         if child.is_dir():
             if target.exists():
                 shutil.rmtree(target)
-            shutil.copytree(child, target, symlinks=True)
+            copy_tree(child, target, link_files=link_files)
         else:
             if target.exists():
                 target.unlink()
-            shutil.copy2(child, target, follow_symlinks=False)
+            if link_files:
+                hardlink_or_copy_file(child, target)
+            else:
+                shutil.copy2(child, target, follow_symlinks=False)
+
+
+def hardlink_or_copy_file(source: str | Path, dest: str | Path) -> Path:
+    source_path = Path(source)
+    dest_path = Path(dest)
+    if source_path.is_symlink():
+        shutil.copy2(source_path, dest_path, follow_symlinks=False)
+        return dest_path
+    try:
+        os.link(source_path, dest_path)
+    except OSError as exc:
+        raise OSError(
+            "Failed to hardlink WildClawBench asset. "
+            "Use copy mode or place --output-dir on the same filesystem as "
+            f"--workspace-dir. Source: {source_path}; destination: {dest_path}"
+        ) from exc
+    return dest_path
 
 
 def write_text(path: Path, text: str, *, executable: bool = False) -> None:

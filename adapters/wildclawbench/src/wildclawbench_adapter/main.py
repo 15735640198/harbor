@@ -11,6 +11,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from wildclawbench_adapter.adapter import (  # noqa: PLC0415
         DEFAULT_BASE_IMAGE,
+        DEFAULT_BASE_PLATFORM,
         DEFAULT_SOURCE_DIR,
         HARBOR_ROOT,
         WildClawBenchAdapter,
@@ -18,6 +19,7 @@ if __package__ in (None, ""):
 else:
     from .adapter import (
         DEFAULT_BASE_IMAGE,
+        DEFAULT_BASE_PLATFORM,
         DEFAULT_SOURCE_DIR,
         HARBOR_ROOT,
         WildClawBenchAdapter,
@@ -78,6 +80,20 @@ def _parse_args() -> argparse.Namespace:
         help="Docker image used as the generated task base image",
     )
     parser.add_argument(
+        "--base-platform",
+        default=DEFAULT_BASE_PLATFORM,
+        help="Docker platform for the generated task base image. Use an empty string to omit.",
+    )
+    parser.add_argument(
+        "--link-assets",
+        action="store_true",
+        help=(
+            "Hardlink workspace and gt files instead of copying them. This avoids "
+            "duplicating large WildClawBench assets, but requires output-dir and "
+            "workspace-dir to be on the same filesystem."
+        ),
+    )
+    parser.add_argument(
         "--strict-assets",
         dest="strict_assets",
         action="store_true",
@@ -124,6 +140,8 @@ def main() -> None:
         overwrite=args.overwrite,
         task_ids=args.task_ids,
         base_image=args.base_image,
+        base_platform=args.base_platform,
+        link_assets=args.link_assets,
         strict_assets=args.strict_assets,
         org=args.org,
         verifier_model=args.verifier_model,

@@ -34,6 +34,17 @@ hf download internlm/WildClawBench Images/wildclawbench-ubuntu_v1.3.tar \
 docker load -i related-projects/external-tasks/WildClawBench/Images/wildclawbench-ubuntu_v1.3.tar
 ```
 
+Then build the Harbor derivative that preserves the upstream image contents
+while replacing the cached OpenClaw binary:
+
+```bash
+bash adapters/wildclawbench/docker/openclaw/build.sh
+```
+
+The upstream image contains stale proxy variables, so the build script clears
+proxy settings by default. Set `BUILD_HTTP_PROXY` and `BUILD_HTTPS_PROXY`
+explicitly if your Docker build needs a reachable proxy.
+
 ## Harbor Mapping
 
 Each WildClawBench task becomes a one-step Harbor task. The step layout lets
@@ -44,8 +55,11 @@ Harbor run upstream warmup commands before the agent starts.
   Harbor `tests/`.
 - Requested skills are copied from upstream `skills/` into `/skills` in the
   generated environment.
-- The generated environment uses `/tmp_workspace` as the workdir and symlinks
-  `/app` to `/tmp_workspace`.
+- The generated environment uses the derived
+  `wildclawbench-ubuntu-openclaw:2026.5.27` image by default, sets
+  `/tmp_workspace` as the workdir, and symlinks `/app` to `/tmp_workspace`.
+- Generated Dockerfiles include `FROM --platform=linux/amd64 ...` because the
+  upstream WildClawBench image tarballs are amd64-only.
 - The embedded upstream `grade(...)` function is executed directly during
   verification.
 
@@ -56,8 +70,14 @@ Generate tasks:
 ```bash
 uv run python adapters/wildclawbench/src/wildclawbench_adapter/main.py \
   --output-dir datasets/wildclawbench \
+  --link-assets \
   --overwrite
 ```
+
+Use `--link-assets` for full local generation unless you intentionally want a
+second physical copy of the prepared WildClawBench workspace. The prepared
+workspace is large, and hardlinks keep Docker-visible files as normal files
+without duplicating their contents on the same filesystem.
 
 Run with the default config, which mirrors the PinchBench job model settings:
 
@@ -68,3 +88,7 @@ uv run harbor run -c examples/configs/wildclawbench-job.yaml
 The default config uses OpenClaw with `anthropic/kimi-k2.6` and the verifier
 model `glm-5.1`. The generated verifier aliases `OPENROUTER_*` variables from
 `ANTHROPIC_*` variables when only the PinchBench-style config is present.
+
+The WildClawBench upstream base image includes an older cached OpenClaw binary.
+The derived image caches `OpenClaw 2026.5.27`; the example config pins the same
+version so Harbor verifies the cache and skips per-run installation.
