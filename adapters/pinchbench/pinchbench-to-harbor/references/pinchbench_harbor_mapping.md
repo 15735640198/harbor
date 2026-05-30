@@ -51,7 +51,8 @@ Automated:
 LLM judge:
 
 - Generate `/tests/llm_judge.py` using `uv` script dependencies.
-- Use Anthropic structured output with `ANTHROPIC_API_KEY` and `MODEL_NAME` from `[verifier.env]`.
+- Use an Anthropic-compatible messages call with `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL`, and `MODEL_NAME` from `[verifier.env]`.
+- Request the JSON shape in the judge prompt and parse/coerce the returned text. Do not rely on provider-specific structured-output request fields.
 - Pass task prompt, expected behavior, summarized transcript, visible workspace text files, and rubric.
 - Write `reward` and `llm_judge` scores to `/logs/verifier/reward.json`.
 

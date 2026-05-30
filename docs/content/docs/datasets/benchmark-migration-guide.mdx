@@ -1,0 +1,291 @@
+---
+title: Benchmark Migration Guide
+description: Practical guidance and common pitfalls when migrating open source benchmarks into Harbor datasets.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+This guide summarizes the migration lessons from adapting PinchBench into Harbor. Use it when converting another open source benchmark into Harbor tasks, especially when the benchmark has mixed task types, bundled assets, automated checks, LLM judges, or agent-specific execution behavior.
+
+<Callout title="Scope">
+This guide focuses on migration risk and validation. For adapter structure and code patterns, use the [Adapter Implementation Guide](/docs/datasets/adapter-implementation-guide). For adapter review requirements, use [Adapters (Agent Guide)](/docs/datasets/adapters).
+</Callout>
+
+## Migration Goal
+
+A benchmark migration is complete only when each upstream case becomes a runnable, self-contained Harbor task:
+
+```text
+datasets/<benchmark>/<task-id>/
+|-- task.toml
+|-- instruction.md
+|-- environment/
+|   `-- Dockerfile
+|-- tests/
+|   `-- test.sh
+`-- solution/          # optional, when upstream has oracle solutions
+```
+
+The adapter should preserve the benchmark's evaluation intent while using Harbor's execution contract:
+
+- The agent works in the configured task workdir, usually `/app`.
+- Agent-visible files are copied into `environment/workspace/` and then into `/app`.
+- Hidden grading code and answer material live under `tests/`.
+- Verifiers write `/logs/verifier/reward.json` or `/logs/verifier/reward.txt`.
+- Generated task IDs are deterministic and stable across adapter runs.
+
+## Recommended Workflow
+
+### 1. Inventory the upstream benchmark
+
+Before writing conversion code, inspect a representative sample and classify task shapes.
+
+For each upstream case, identify:
+
+- The stable source ID.
+- The agent prompt.
+- The files the agent should see.
+- The files or secrets the agent must not see.
+- The grading mode: deterministic, LLM judge, hybrid, human review, or external service.
+- The expected output file names and formats.
+- Runtime dependencies: Python packages, Node.js, browser, system packages, network, GPUs, long timeouts.
+- Whether upstream provides oracle solutions.
+
+PinchBench looked simple because tasks were Markdown files, but the actual task shapes varied: pure automated checks, pure LLM judge tasks, hybrid tasks, workspace files, transcript-dependent checks, PDF inputs, log-analysis files, and multi-session specifications.
+
+### 2. Build a source-to-Harbor mapping
+
+Write down the mapping before generating many tasks. The mapping should answer:
+
+- Which frontmatter fields map into `task.toml`.
+- Which Markdown sections become `instruction.md`.
+- Which sections are hidden rubric or expected behavior.
+- How upstream assets become `environment/workspace/*`.
+- How grading code becomes `tests/*`.
+- How multi-turn or multi-session tasks become Harbor multi-step tasks.
+
+Keep this mapping near the adapter. For PinchBench, this lived in a skill reference file so both the agent harness and direct converter had the same rules.
+
+### 3. Prefer deterministic conversion paths
+
+Use an agent harness only when it is part of the migration design, not as the only source of truth.
+
+A robust adapter should usually have:
+
+- A deterministic direct conversion path for local smoke tests and CI.
+- An optional agent-harness path when you intentionally want an agent to apply a migration skill or handle messy edge cases.
+- Validation after generation so a harness cannot silently emit malformed tasks.
+
+For PinchBench, the adapter could call Claude Code with the conversion skill, but the direct skill script remained important for deterministic testing and debugging.
+
+### 4. Generate complete Harbor tasks
+
+Do not generate partial tasks that rely on files outside the task directory at run time. A generated Harbor task should be portable.
+
+Check every task for:
+
+- `task.toml` points at the intended workdir and timeout.
+- `instruction.md` contains only agent-visible instructions.
+- `environment/Dockerfile` copies `environment/workspace/` into `/app`.
+- `tests/test.sh` is executable and writes a reward even on verifier failures.
+- Hidden rubrics and answer keys are not copied into `/app`.
+- Binary files are copied as bytes, not embedded into judge prompts.
+
+### 5. Preserve deterministic graders as code
+
+If the upstream benchmark provides deterministic grading code, keep it deterministic.
+
+Common mistake: wrapping deterministic checks in an LLM judge because it is easier to port. This changes the benchmark and makes results nondeterministic.
+
+Better pattern:
+
+```python
+raw_scores = grade(transcript, "/app")
+reward = average_numeric_scores(raw_scores)
+write_reward_json(reward, raw_scores)
+```
+
+For PinchBench, automated `grade(transcript, workspace_path)` blocks were executed directly inside the Harbor verifier.
+
+### 6. Treat LLM judge migration as provider-unstable
+
+LLM judge tasks need extra portability work. Provider response formats, model aliases, base URLs, and structured-output features vary.
+
+Use a prompt-level JSON contract unless the target provider is known to support a structured response field:
+
+```text
+Output only valid JSON:
+{"scores": {"criterion_name": 0.0}, "total": 0.0, "notes": "short rationale"}
+```
+
+Then parse defensively:
+
+- Extract the first JSON object from text if the model adds prose.
+- Accept `Total`, `Score`, `reward`, or top-level numeric criteria when practical.
+- Clamp all scores to `[0.0, 1.0]`.
+- Compute `total` from criteria if it is missing.
+- Always write a valid zero reward on judge failure.
+
+PinchBench exposed several pitfalls here:
+
+- Some providers rejected structured-output request fields.
+- Some models returned top-level criterion keys rather than `{"scores": ...}`.
+- Some Anthropic-compatible responses included non-text blocks before text blocks.
+- Model aliases like `claude-haiku-4-5` or prefixed Kimi names were not supported by the configured gateway.
+
+### 7. Validate generated tasks before running a full job
+
+Use small validation loops before converting or running the full benchmark.
+
+Recommended checks:
+
+```bash
+# Generate one easy task, one asset-heavy task, one automated task, and one LLM-judge task.
+uv run python adapters/<benchmark>/src/<adapter>/main.py --task-ids <ids> --overwrite
+
+# Parse generated task configs.
+uv run python -c "from harbor.models.task.task import Task; Task('datasets/<benchmark>/<task-id>')"
+
+# Run one task with a fast agent or nop/oracle when appropriate.
+uv run harbor run -t datasets/<benchmark>/<task-id> --agent <agent>
+```
+
+Also inspect generated files manually. Automated validation catches schema errors; it does not prove the verifier is grading the intended result.
+
+### 8. Run a small representative job
+
+Before launching every task, run 5-20 representative tasks.
+
+Inspect for:
+
+- Agent setup failures.
+- Missing runtime dependencies.
+- Wrong model/provider environment.
+- Timeout races.
+- Expected output files missing.
+- Verifier crashes hidden by fallback zero rewards.
+- LLM judge model response parsing failures.
+- Suspiciously high rewards when no output was produced.
+- Suspicious zero rewards when the agent actually wrote the result.
+
+PinchBench showed why this matters: one task wrote the correct output a few seconds after Harbor timed out, so the zero reward was a timeout artifact, not a verifier-quality signal.
+
+## Common Pitfalls
+
+### Source parsing pitfalls
+
+- Assuming one source format covers all tasks.
+- Treating expected behavior, rubric, or answer keys as agent-visible prompt text.
+- Losing task IDs during slugification.
+- Failing to copy assets referenced by relative paths.
+- Reading binary assets into text prompts.
+- Not preserving upstream category or grading metadata in `task.toml`.
+
+### Environment pitfalls
+
+- Using a task Dockerfile that lacks tools needed by the agent, verifier, or benchmark assets.
+- Forgetting to copy `environment/workspace/` into the workdir.
+- Assuming internet is available when the environment config or provider blocks it.
+- Installing dependencies only in the verifier but not in the agent environment.
+- Pinning no versions for fragile external CLIs.
+- Relying on model/tool defaults inside an agent image.
+
+For agent-heavy benchmarks, verify the agent can actually operate inside the task image. With OpenClaw, the relevant checks were Node.js, `openclaw`, auth profiles, model config, workspace path, and session log persistence.
+
+### Agent configuration pitfalls
+
+- Passing model names in the wrong provider namespace.
+- Assuming an OpenAI-compatible gateway behaves exactly like OpenAI.
+- Assuming an Anthropic-compatible gateway supports every Anthropic feature.
+- Forgetting to pass the base URL to both agent and verifier.
+- Using a verifier model name that differs from the working agent model.
+- Setting task timeouts too low for research, transcript, or log-analysis tasks.
+- Treating trajectory warnings as task failures without checking reward and verifier logs.
+
+For long-form tasks, use job-level multipliers or task-specific timeouts:
+
+```yaml
+timeout_multiplier: 1.0
+agent_timeout_multiplier: 3.0
+verifier_timeout_multiplier: 1.0
+```
+
+### Verifier pitfalls
+
+- Verifier writes nothing when it crashes.
+- Verifier reads the wrong workspace path.
+- Verifier checks a filename that differs from the prompt.
+- Automated checks depend on a transcript format that the target agent does not emit.
+- Hybrid weights are ignored or normalized incorrectly.
+- LLM judge prompt includes hidden answer material in agent-visible files.
+- LLM judge scores the transcript only and not the created workspace files.
+- Fallback zero reward hides a real parser or provider error.
+
+Always inspect `verifier/test-stdout.txt` and `verifier/reward.json` for small runs.
+
+### Runtime artifact pitfalls
+
+- Agent writes the correct file after Harbor's timeout boundary.
+- Session logs are generated but not copied before container teardown.
+- Multiple files match a session glob and the parser chooses a generated trace instead of the raw session.
+- Usage extraction fails even though task execution succeeded.
+- Empty or malformed trajectories break downstream trace export but not the reward.
+
+In the PinchBench/OpenClaw migration, Harbor initially counted both raw OpenClaw session JSONL files and generated `*.trajectory.jsonl` files as candidate sessions. The fix was to ignore generated trajectory files during session discovery.
+
+### Scale-up pitfalls
+
+- Converting all tasks at once without resumability.
+- Re-running converted tasks with `--overwrite` and losing manual fixes.
+- Not keeping conversion logs per task.
+- Aggregating results before separating task errors from agent errors.
+- Treating zero reward as benchmark failure without checking exception type.
+- Treating nonzero reward as proof that conversion is correct.
+
+The adapter should support `--task-ids`, `--limit`, `--overwrite`, and preferably a way to continue only missing tasks.
+
+## Debugging Checklist
+
+When a migrated task fails, debug in this order:
+
+1. Read `config.json` for the task path, model, env, timeouts, and verifier env.
+2. Read `trial.log` to confirm image build, agent setup, and runtime commands.
+3. Read `exception.txt` if present; classify as setup, agent timeout, verifier timeout, or verifier parse.
+4. Read `agent/openclaw-output.txt` or equivalent agent stdout.
+5. Read raw session logs, not generated trajectory files.
+6. Confirm the expected output file exists in the workspace before verifier runs.
+7. Read `verifier/test-stdout.txt`.
+8. Read `verifier/reward.json`.
+9. Compare the verifier's expected filename and rubric against `instruction.md`.
+10. If using an LLM judge, reproduce a minimal API call with the same base URL, key, and model.
+
+## Pre-Merge Checklist
+
+Before considering a benchmark migration ready:
+
+- A representative subset runs end-to-end.
+- At least one task from every grading mode has been exercised.
+- Asset-heavy tasks have been checked in the container.
+- LLM judge tasks have been tested with the intended provider.
+- Deterministic verifiers do not call an LLM.
+- Verifier failures always produce a reward file.
+- Timeouts are realistic for the agent and task type.
+- Adapter output is deterministic across runs.
+- Generated tasks do not leak hidden expected behavior or answer keys.
+- The adapter README documents source setup, conversion commands, and resume strategy.
+- Known limitations are documented, especially missing oracles and provider-specific judge assumptions.
+
+## Practical Template
+
+Use this as the starting plan for future migrations:
+
+1. Convert 3-5 tasks manually or with a prototype script.
+2. Write the source-to-Harbor mapping.
+3. Build the adapter with direct deterministic conversion.
+4. Add an optional agent-harness path only if needed.
+5. Generate a small representative subset.
+6. Validate task schema and inspect files.
+7. Run a small job with the target agent and verifier model.
+8. Fix environment, model, timeout, and verifier issues.
+9. Convert the full dataset.
+10. Run larger jobs only after small-run anomalies are understood.

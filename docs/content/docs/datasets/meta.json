@@ -4,6 +4,7 @@
         "index",
         "publishing",
         "adapters",
+        "benchmark-migration-guide",
         "adapter-implementation-guide",
         "adapters-human",
         "metrics"
