@@ -24,6 +24,8 @@ from harbor.models.agent.context import AgentContext
 from harbor.models.agent.name import AgentName
 from harbor.models.task.config import MultiStepRewardStrategy, StepConfig, TaskOS
 from harbor.models.task.task import Task
+from harbor.models.trajectories import Trajectory
+from harbor.models.trajectories.final_metrics import FinalMetrics
 from harbor.models.trial.config import ArtifactConfig, TrialConfig
 from harbor.models.trial.paths import TrialPaths
 from harbor.models.trial.result import (
@@ -466,13 +468,17 @@ class Trial:
         self._are_agent_logs_downloaded = True
 
     def _maybe_populate_agent_context(self, agent_result: AgentContext | None) -> None:
-        if (
-            agent_result is None
-            or not agent_result.is_empty()
-            or not isinstance(self._agent, BaseInstalledAgent)
-        ):
+        if agent_result is None or not isinstance(self._agent, BaseInstalledAgent):
+            return
+        trajectory_path = self._agent.logs_dir / "trajectory.json"
+        if not agent_result.is_empty() and trajectory_path.exists():
             return
         self._agent.populate_context_post_run(agent_result)
+
+    def _reset_agent_post_run_state_for_step(self) -> None:
+        """Allow installed agents to parse logs independently for each step."""
+        if hasattr(self._agent, "_post_run_completed"):
+            setattr(self._agent, "_post_run_completed", False)
 
     def _create_step_dirs(self, step_name: str) -> tuple[Path, Path]:
         """Create and return (agent_dir, verifier_dir) for a step."""
@@ -631,6 +637,7 @@ class Trial:
 
             step_result = StepResult(step_name=step_name)
             self.result.step_results.append(step_result)
+            self._reset_agent_post_run_state_for_step()
 
             step_agent_dir, step_verifier_dir = self._create_step_dirs(step_name)
             self._environment.default_user = (
@@ -707,10 +714,159 @@ class Trial:
             self._task.config.multi_step_reward_strategy,
         )
 
+        self._write_multi_step_trajectory()
+
         # The trial-root agent/, verifier/, artifacts/ dirs were mount targets
         # during the run; per-step content has been relocated under steps/, so
         # rmdir any that are now empty (safe: rmdir raises on non-empty).
         self._trial_paths.cleanup_empty_mount_dirs()
+
+    def _write_multi_step_trajectory(self) -> None:
+        """Write a trial-level ATIF trajectory aggregated from per-step trajectories.
+
+        Multi-step trials isolate each step under ``steps/{name}/agent``.  This
+        aggregate gives downstream tooling a stable ``agent/trajectory.json`` even
+        when later steps time out, as long as their raw logs were converted into a
+        per-step trajectory before relocation.
+        """
+        if not self.result.step_results:
+            return
+
+        step_trajectories: list[tuple[str, Trajectory]] = []
+        skipped: list[dict[str, str]] = []
+        for step_result in self.result.step_results:
+            path = (
+                self._trial_paths.step_agent_dir(step_result.step_name)
+                / "trajectory.json"
+            )
+            if not path.exists():
+                skipped.append(
+                    {
+                        "step_name": step_result.step_name,
+                        "reason": "missing trajectory.json",
+                    }
+                )
+                continue
+            try:
+                step_trajectories.append(
+                    (
+                        step_result.step_name,
+                        Trajectory.model_validate_json(path.read_text()),
+                    )
+                )
+            except Exception as e:
+                skipped.append(
+                    {
+                        "step_name": step_result.step_name,
+                        "reason": f"invalid trajectory.json: {e}",
+                    }
+                )
+
+        if not step_trajectories:
+            return
+
+        merged_steps = []
+        for step_name, trajectory in step_trajectories:
+            for step in trajectory.steps:
+                extra = dict(step.extra or {})
+                extra.setdefault("harbor_step_name", step_name)
+                extra.setdefault("harbor_original_step_id", step.step_id)
+                merged_steps.append(
+                    step.model_copy(
+                        update={
+                            "step_id": len(merged_steps) + 1,
+                            "extra": extra,
+                        }
+                    )
+                )
+
+        final_metrics = self._aggregate_multi_step_final_metrics(
+            [trajectory for _, trajectory in step_trajectories],
+            total_steps=len(merged_steps),
+        )
+        extra: dict[str, Any] = {
+            "harbor_multi_step": True,
+            "source": "multi_step_aggregate",
+            "step_trajectories": [
+                {
+                    "step_name": step_name,
+                    "path": f"steps/{step_name}/agent/trajectory.json",
+                    "steps": len(trajectory.steps),
+                }
+                for step_name, trajectory in step_trajectories
+            ],
+        }
+        if skipped:
+            extra["skipped_step_trajectories"] = skipped
+
+        aggregate = Trajectory(
+            schema_version="ATIF-v1.7",
+            session_id=self.config.trial_name,
+            trajectory_id=f"{self.config.trial_name}:multi-step",
+            agent=step_trajectories[0][1].agent,
+            steps=merged_steps,
+            notes=(
+                "Aggregated from per-step trajectories. Some step trajectories "
+                "were missing or invalid; see extra.skipped_step_trajectories."
+                if skipped
+                else "Aggregated from per-step trajectories."
+            ),
+            final_metrics=final_metrics,
+            extra=extra,
+        )
+
+        self._trial_paths.agent_dir.mkdir(parents=True, exist_ok=True)
+        (self._trial_paths.agent_dir / "trajectory.json").write_text(
+            json.dumps(aggregate.to_json_dict(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def _aggregate_multi_step_final_metrics(
+        self, trajectories: list[Trajectory], *, total_steps: int
+    ) -> FinalMetrics | None:
+        totals: dict[str, int | float | None] = {
+            "total_prompt_tokens": None,
+            "total_completion_tokens": None,
+            "total_cached_tokens": None,
+            "total_cost_usd": None,
+        }
+
+        for trajectory in trajectories:
+            metrics = trajectory.final_metrics
+            if metrics is None:
+                continue
+            for field in totals:
+                value = getattr(metrics, field)
+                if value is None:
+                    continue
+                totals[field] = (totals[field] or 0) + value
+
+        if all(value is None for value in totals.values()):
+            return FinalMetrics(total_steps=total_steps)
+
+        return FinalMetrics(
+            total_prompt_tokens=(
+                int(totals["total_prompt_tokens"])
+                if totals["total_prompt_tokens"] is not None
+                else None
+            ),
+            total_completion_tokens=(
+                int(totals["total_completion_tokens"])
+                if totals["total_completion_tokens"] is not None
+                else None
+            ),
+            total_cached_tokens=(
+                int(totals["total_cached_tokens"])
+                if totals["total_cached_tokens"] is not None
+                else None
+            ),
+            total_cost_usd=(
+                float(totals["total_cost_usd"])
+                if totals["total_cost_usd"] is not None
+                else None
+            ),
+            total_steps=total_steps,
+        )
 
     async def _maybe_upload_agent_logs(self) -> None:
         """Upload locally-generated agent logs back to the environment.

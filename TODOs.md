@@ -16,6 +16,7 @@ tasks
 
 
 - xiaoyi trace analysis POC
+    - re-ran 147 using minimax
     - paper summary
     - paper result reproduce
     - analyze xiaoyi(taichu) tool list to new categories
