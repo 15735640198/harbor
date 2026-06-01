@@ -81,6 +81,34 @@ def test_openclaw_skills_dir_in_run_setup_command(tmp_path: Path):
     assert "~/.openclaw/skills/" in setup_command
 
 
+def test_openclaw_normalizes_openai_base_url_override(tmp_path: Path):
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        extra_env={
+            "OPENAI_API_KEY": "test-key",
+            "OPENAI_BASE_URL": "https://api.openbitfun.com",
+        },
+    )
+
+    config = agent._build_provider_config("openai")
+
+    assert config["baseUrl"] == "https://api.openbitfun.com/v1"
+
+
+def test_openclaw_preserves_openai_base_url_with_v1(tmp_path: Path):
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        extra_env={
+            "OPENAI_API_KEY": "test-key",
+            "OPENAI_BASE_URL": "https://api.openbitfun.com/v1",
+        },
+    )
+
+    config = agent._build_provider_config("openai")
+
+    assert config["baseUrl"] == "https://api.openbitfun.com/v1"
+
+
 def test_openclaw_tool_result_preserves_is_error_in_extra(tmp_path: Path):
     agent = OpenClaw(
         logs_dir=tmp_path,

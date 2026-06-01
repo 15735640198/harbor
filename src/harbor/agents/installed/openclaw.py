@@ -1279,7 +1279,9 @@ COPY_SESSION_EOF
                 "api": "openai-completions",
             }
         elif base_url_override:
-            config["baseUrl"] = base_url_override
+            config["baseUrl"] = self._normalize_provider_base_url(
+                provider, base_url_override
+            )
 
         # Add API key (as env var name, not value)
         config["apiKey"] = f"{provider.upper()}_API_KEY"
@@ -1299,3 +1301,11 @@ COPY_SESSION_EOF
             config["models"] = []
 
         return config
+
+    @staticmethod
+    def _normalize_provider_base_url(provider: str, base_url: str) -> str:
+        """Normalize provider API roots for OpenClaw model calls."""
+        normalized = base_url.rstrip("/")
+        if provider.lower() == "openai" and not normalized.endswith("/v1"):
+            return f"{normalized}/v1"
+        return normalized
