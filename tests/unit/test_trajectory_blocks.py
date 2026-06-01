@@ -129,7 +129,7 @@ def test_parse_trajectory_blocks_merges_openclaw_tool_result_step():
     assert blocks[1].action_category == "Explain"
 
 
-def test_parse_trajectory_blocks_splits_multi_tool_step_and_matches_extra_ids():
+def test_parse_trajectory_blocks_groups_multi_tool_step_and_matches_extra_ids():
     trajectory = Trajectory(
         agent=Agent(name="openclaw", version="1.0"),
         steps=[
@@ -175,10 +175,88 @@ def test_parse_trajectory_blocks_splits_multi_tool_step_and_matches_extra_ids():
 
     blocks = parse_trajectory_blocks(trajectory)
 
-    assert len(blocks) == 2
-    assert [block.tool_call_id for block in blocks] == ["call_read", "call_search"]
-    assert [block.result for block in blocks] == ["read output", "search output"]
-    assert [block.action_category for block in blocks] == ["Explore", "Search"]
+    assert len(blocks) == 1
+    assert blocks[0].tool_call_id is None
+    assert blocks[0].result_step_id is None
+    assert [call["tool_call_id"] for call in blocks[0].tool_calls or []] == [
+        "call_read",
+        "call_search",
+    ]
+    assert blocks[0].source_step_ids == [1, 2, 3]
+    assert blocks[0].action == (
+        'read({"path": "/app/a.txt"}); web_search({"query": "harbor"})'
+    )
+    assert "Result for read [call_read]:\nread output" in (blocks[0].result or "")
+    assert "Result for web_search [call_search]:\nsearch output" in (
+        blocks[0].result or ""
+    )
+    assert blocks[0].action_category == "Explore"
+
+
+def test_parse_trajectory_blocks_collapses_parallel_search_calls_to_one_search_block():
+    trajectory = Trajectory(
+        agent=Agent(name="openclaw", version="1.0"),
+        steps=[
+            Step(
+                step_id=1,
+                source="agent",
+                message="",
+                tool_calls=[
+                    ToolCall(
+                        tool_call_id="call_a",
+                        function_name="web_search",
+                        arguments={"query": "alpha"},
+                    ),
+                    ToolCall(
+                        tool_call_id="call_b",
+                        function_name="web_search",
+                        arguments={"query": "beta"},
+                    ),
+                    ToolCall(
+                        tool_call_id="call_c",
+                        function_name="web_search",
+                        arguments={"query": "gamma"},
+                    ),
+                ],
+            ),
+            Step(
+                step_id=2,
+                source="agent",
+                message="alpha results",
+                observation=Observation(
+                    results=[ObservationResult(content="alpha results")]
+                ),
+                llm_call_count=0,
+                extra={"openclaw_role": "toolResult", "tool_call_id": "call_a"},
+            ),
+            Step(
+                step_id=3,
+                source="agent",
+                message="beta results",
+                observation=Observation(
+                    results=[ObservationResult(content="beta results")]
+                ),
+                llm_call_count=0,
+                extra={"openclaw_role": "toolResult", "tool_call_id": "call_b"},
+            ),
+            Step(
+                step_id=4,
+                source="agent",
+                message="gamma results",
+                observation=Observation(
+                    results=[ObservationResult(content="gamma results")]
+                ),
+                llm_call_count=0,
+                extra={"openclaw_role": "toolResult", "tool_call_id": "call_c"},
+            ),
+        ],
+    )
+
+    blocks = parse_trajectory_blocks(trajectory)
+
+    assert len(blocks) == 1
+    assert blocks[0].action_category == "Search"
+    assert action_ngrams(blocks, n=1) == {("Search",): 1}
 
 
 def test_parse_trajectory_blocks_matches_result_by_source_call_id():
@@ -256,8 +334,11 @@ def test_parse_trajectory_blocks_uses_positional_result_fallback():
 
     blocks = parse_trajectory_blocks(trajectory)
 
-    assert [block.result for block in blocks] == ["a", "b"]
-    assert [block.result_step_id for block in blocks] == [2, 3]
+    assert len(blocks) == 1
+    assert "Result for read [call_1]:\na" in (blocks[0].result or "")
+    assert "Result for read [call_2]:\nb" in (blocks[0].result or "")
+    assert blocks[0].result_step_id is None
+    assert blocks[0].source_step_ids == [1, 2, 3]
 
 
 def test_parse_trajectory_blocks_skips_copied_context_by_default():

@@ -9,6 +9,7 @@ ideas:
     - failure pattern across jobs (common patterns)
     - hard coded failure pattern
     - xiaoyi categories (System API call, operate APP)
+    - how to better utilize the relationship between eval result and trajectory pattern
 
 tasks
 - 10 high-quality 0-1 generation
@@ -16,9 +17,9 @@ tasks
 
 
 - xiaoyi trace analysis POC
-    - re-ran 147 using minimax
-    - paper summary
-    - paper result reproduce
+    - re-ran 147 using minimax, 分析不同模型 trajectory (kimi/minimax)
+    - paper summary, the core idea of TAR, ATIF to TAR
+    - paper result reproduce on Harbor ATIF
     - analyze xiaoyi(taichu) tool list to new categories
     - remove unrelateded categories(like refactor)
     - analyze pinchbench trajectories for openclaw patterns

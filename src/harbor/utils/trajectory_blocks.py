@@ -76,8 +76,9 @@ def parse_trajectory_blocks(
     """Convert ATIF agent steps into thought/action/result blocks.
 
     The mapping follows the ATIF schema rather than raw agent logs. Tool-call
-    steps become one block per tool call. Deterministic tool-result steps that
-    follow the tool-call step are merged into the matching block as `result`.
+    steps become one block per assistant step. Deterministic tool-result steps
+    that follow the tool-call step are merged into the matching block as
+    `result`.
     """
     blocks, _diagnostics = _parse_trajectory_blocks_with_diagnostics(
         trajectory,
@@ -113,6 +114,7 @@ def _parse_trajectory_blocks_with_diagnostics(
 
         if tool_calls:
             result_run = _collect_following_tool_results(steps, index + 1)
+            matched_results: list[tuple[ToolCall, _MatchedResult]] = []
             for tool_index, tool_call in enumerate(tool_calls):
                 result = _match_tool_result(
                     step,
@@ -123,30 +125,44 @@ def _parse_trajectory_blocks_with_diagnostics(
                 )
                 if result.result_index is not None:
                     consumed_result_indexes.add(result.result_index)
+                matched_results.append((tool_call, result))
 
-                source_step_ids = [step.step_id]
+            source_step_ids = [step.step_id]
+            for _tool_call, result in matched_results:
                 if (
                     result.result_step_id is not None
                     and result.result_step_id != step.step_id
+                    and result.result_step_id not in source_step_ids
                 ):
                     source_step_ids.append(result.result_step_id)
 
+            dumped_calls = _dump_tool_calls(tool_calls)
+            if len(tool_calls) == 1:
+                tool_call, result = matched_results[0]
                 action = _render_tool_call(tool_call)
-                dumped_call = _dump_tool_calls([tool_call])
-                blocks.append(
-                    TrajectoryBlock(
-                        iteration=len(blocks),
-                        step_id=step.step_id,
-                        thought=_extract_thought(step),
-                        action=action,
-                        result=result.content,
-                        action_category=categorize_action(action, dumped_call),
-                        tool_calls=dumped_call,
-                        tool_call_id=tool_call.tool_call_id,
-                        result_step_id=result.result_step_id,
-                        source_step_ids=source_step_ids,
-                    )
+                result_content = result.content
+                tool_call_id = tool_call.tool_call_id
+                result_step_id = result.result_step_id
+            else:
+                action = _render_action(step)
+                result_content = _format_multi_tool_result(matched_results)
+                tool_call_id = None
+                result_step_id = None
+
+            blocks.append(
+                TrajectoryBlock(
+                    iteration=len(blocks),
+                    step_id=step.step_id,
+                    thought=_extract_thought(step),
+                    action=action,
+                    result=result_content,
+                    action_category=categorize_action(action, dumped_calls),
+                    tool_calls=dumped_calls,
+                    tool_call_id=tool_call_id,
+                    result_step_id=result_step_id,
+                    source_step_ids=source_step_ids,
                 )
+            )
             index += 1
             continue
 
@@ -490,6 +506,19 @@ def _render_tool_call(tool_call: ToolCall) -> str:
         return tool_call.function_name
     args = json.dumps(tool_call.arguments, sort_keys=True, ensure_ascii=False)
     return f"{tool_call.function_name}({args})"
+
+
+def _format_multi_tool_result(
+    matched_results: list[tuple[ToolCall, _MatchedResult]],
+) -> str | None:
+    parts = []
+    for tool_call, result in matched_results:
+        if result.content is None:
+            continue
+        header = f"Result for {tool_call.function_name} [{tool_call.tool_call_id}]"
+        parts.append(f"{header}:\n{result.content}")
+    text = "\n\n".join(parts)
+    return text or None
 
 
 def _dump_tool_calls(tool_calls: list[ToolCall] | None) -> list[dict[str, Any]]:
