@@ -259,6 +259,65 @@ def test_parse_trajectory_blocks_collapses_parallel_search_calls_to_one_search_b
     assert action_ngrams(blocks, n=1) == {("Search",): 1}
 
 
+def test_parse_trajectory_blocks_can_temporarily_combine_retrieve_categories():
+    trajectory = Trajectory(
+        agent=Agent(name="openclaw", version="1.0"),
+        steps=[
+            Step(
+                step_id=1,
+                source="agent",
+                message="",
+                tool_calls=[
+                    ToolCall(
+                        tool_call_id="call_read",
+                        function_name="read",
+                        arguments={"path": "/app/file.txt"},
+                    )
+                ],
+            ),
+            Step(
+                step_id=2,
+                source="agent",
+                message="contents",
+                observation=Observation(
+                    results=[ObservationResult(content="contents")]
+                ),
+                llm_call_count=0,
+                extra={"openclaw_role": "toolResult", "tool_call_id": "call_read"},
+            ),
+            Step(
+                step_id=3,
+                source="agent",
+                message="",
+                tool_calls=[
+                    ToolCall(
+                        tool_call_id="call_search",
+                        function_name="web_search",
+                        arguments={"query": "harbor"},
+                    )
+                ],
+            ),
+            Step(
+                step_id=4,
+                source="agent",
+                message="results",
+                observation=Observation(results=[ObservationResult(content="results")]),
+                llm_call_count=0,
+                extra={"openclaw_role": "toolResult", "tool_call_id": "call_search"},
+            ),
+        ],
+    )
+
+    default_blocks = parse_trajectory_blocks(trajectory)
+    retrieve_blocks = parse_trajectory_blocks(trajectory, combine_retrieve=True)
+
+    assert [block.action_category for block in default_blocks] == ["Explore", "Search"]
+    assert [block.action_category for block in retrieve_blocks] == [
+        "Retrieve",
+        "Retrieve",
+    ]
+
+
 def test_parse_trajectory_blocks_matches_result_by_source_call_id():
     trajectory = Trajectory(
         agent=Agent(name="test-agent", version="1.0"),

@@ -103,6 +103,22 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include ATIF steps marked as copied context when generating missing blocks.",
     )
+    parser.add_argument(
+        "--combine-retrieve",
+        action="store_true",
+        help="Temporarily combine Explore and Search categories into Retrieve.",
+    )
+    parser.add_argument(
+        "--success-threshold",
+        type=float,
+        default=1.0,
+        help="Minimum reward value counted as success.",
+    )
+    parser.add_argument(
+        "--errors-as-failures",
+        action="store_true",
+        help="Count exception trials as failures when block data exists.",
+    )
     return parser.parse_args()
 
 
@@ -135,6 +151,7 @@ def main() -> int:
                 regenerate=args.regenerate_blocks,
                 ngram_size=args.ngram_size,
                 include_copied_context=args.include_copied_context,
+                combine_retrieve=args.combine_retrieve,
             )
             if not blocks:
                 continue
@@ -142,7 +159,11 @@ def main() -> int:
             metadata = load_trial_metadata(trial_dir)
             metrics = load_trajectory_metrics(trial_dir / "agent" / "trajectory.json")
             categories = [block.action_category for block in blocks]
-            outcome = classify_outcome(metadata)
+            outcome = classify_outcome(
+                metadata,
+                success_threshold=args.success_threshold,
+                errors_as_failures=args.errors_as_failures,
+            )
             trial_summary = TrialSummary(
                 job=job_dir.name,
                 trial=trial_dir.name,
@@ -266,6 +287,7 @@ def load_or_generate_blocks(
     regenerate: bool,
     ngram_size: int,
     include_copied_context: bool,
+    combine_retrieve: bool,
 ) -> list[TrajectoryBlock]:
     blocks_path = trial_dir / "agent" / blocks_dir_name / "blocks.jsonl"
     trajectory_path = trial_dir / "agent" / "trajectory.json"
@@ -277,6 +299,7 @@ def load_or_generate_blocks(
             blocks_path.parent,
             ngram_size=ngram_size,
             include_copied_context=include_copied_context,
+            combine_retrieve=combine_retrieve,
         )
     blocks = []
     # Split JSONL on the record delimiter only. str.splitlines() also splits on
@@ -284,7 +307,10 @@ def load_or_generate_blocks(
     for line in blocks_path.read_bytes().split(b"\n"):
         line = line.rstrip(b"\r")
         if line.strip():
-            blocks.append(TrajectoryBlock.model_validate_json(line))
+            block = TrajectoryBlock.model_validate_json(line)
+            if combine_retrieve and block.action_category in {"Explore", "Search"}:
+                block = block.model_copy(update={"action_category": "Retrieve"})
+            blocks.append(block)
     return blocks
 
 
@@ -369,12 +395,17 @@ def extract_reward(metadata: dict[str, Any]) -> float | None:
         return None
 
 
-def classify_outcome(metadata: dict[str, Any]) -> str:
+def classify_outcome(
+    metadata: dict[str, Any],
+    *,
+    success_threshold: float = 1.0,
+    errors_as_failures: bool = False,
+) -> str:
     if get_exception_type(metadata):
-        return "error"
+        return "failure" if errors_as_failures else "error"
     reward = extract_reward(metadata)
     if reward is not None:
-        return "success" if reward >= 1.0 else "failure"
+        return "success" if reward >= success_threshold else "failure"
     return "unknown"
 
 
@@ -641,10 +672,12 @@ def write_markdown_summary(
         lines.append(f"| {category} | {count} | {percent:.2f}% |")
 
     lines.extend(["", f"## Top {ngram_size}-grams", ""])
-    lines.append("| N-gram | Count |")
-    lines.append("| --- | ---: |")
-    for ngram, count in ngram_counts[("ALL", "all")].most_common(top_k):
-        lines.append(f"| {' -> '.join(ngram)} | {count} |")
+    append_ngram_table(lines, ngram_counts[("ALL", "all")], top_k)
+
+    for outcome in ("success", "failure"):
+        title = outcome.capitalize()
+        lines.extend(["", f"## {title} Top {ngram_size}-grams", ""])
+        append_ngram_table(lines, ngram_counts[("ALL", outcome)], top_k)
 
     lines.extend(["", "## Anti-Patterns", ""])
     lines.append("| Metric | Count |")
@@ -665,6 +698,20 @@ def write_markdown_summary(
     )
 
     path.write_text("\n".join(lines) + "\n")
+
+
+def append_ngram_table(
+    lines: list[str],
+    counts: Counter[tuple[str, ...]],
+    top_k: int,
+) -> None:
+    lines.append("| N-gram | Count |")
+    lines.append("| --- | ---: |")
+    if not counts:
+        lines.append("| _No matching trajectories_ | 0 |")
+        return
+    for ngram, count in counts.most_common(top_k):
+        lines.append(f"| {' -> '.join(ngram)} | {count} |")
 
 
 def grouped_by_job_outcome(

@@ -16,6 +16,7 @@ from harbor.models.trajectories import ContentPart, Step, ToolCall, Trajectory
 
 ActionCategory = Literal[
     "Explore",
+    "Retrieve",
     "Locate",
     "Search",
     "Reproduce",
@@ -60,11 +61,13 @@ def parse_trajectory_file(
     trajectory_path: Path,
     *,
     include_copied_context: bool = False,
+    combine_retrieve: bool = False,
 ) -> list[TrajectoryBlock]:
     """Load a trajectory file and parse it into thought/action/result blocks."""
     return parse_trajectory_blocks(
         load_trajectory(trajectory_path),
         include_copied_context=include_copied_context,
+        combine_retrieve=combine_retrieve,
     )
 
 
@@ -72,6 +75,7 @@ def parse_trajectory_blocks(
     trajectory: Trajectory,
     *,
     include_copied_context: bool = False,
+    combine_retrieve: bool = False,
 ) -> list[TrajectoryBlock]:
     """Convert ATIF agent steps into thought/action/result blocks.
 
@@ -83,6 +87,7 @@ def parse_trajectory_blocks(
     blocks, _diagnostics = _parse_trajectory_blocks_with_diagnostics(
         trajectory,
         include_copied_context=include_copied_context,
+        combine_retrieve=combine_retrieve,
     )
     return blocks
 
@@ -91,6 +96,7 @@ def _parse_trajectory_blocks_with_diagnostics(
     trajectory: Trajectory,
     *,
     include_copied_context: bool = False,
+    combine_retrieve: bool = False,
 ) -> tuple[list[TrajectoryBlock], dict[str, Any]]:
     blocks: list[TrajectoryBlock] = []
     diagnostics: dict[str, Any] = {
@@ -156,7 +162,10 @@ def _parse_trajectory_blocks_with_diagnostics(
                     thought=_extract_thought(step),
                     action=action,
                     result=result_content,
-                    action_category=categorize_action(action, dumped_calls),
+                    action_category=_normalize_action_category(
+                        categorize_action(action, dumped_calls),
+                        combine_retrieve=combine_retrieve,
+                    ),
                     tool_calls=dumped_calls,
                     tool_call_id=tool_call_id,
                     result_step_id=result_step_id,
@@ -185,7 +194,10 @@ def _parse_trajectory_blocks_with_diagnostics(
                 thought=_extract_thought(step),
                 action=action,
                 result=_extract_result(step),
-                action_category=categorize_action(action, None),
+                action_category=_normalize_action_category(
+                    categorize_action(action, None),
+                    combine_retrieve=combine_retrieve,
+                ),
                 tool_calls=None,
                 source_step_ids=[step.step_id],
             )
@@ -259,6 +271,16 @@ def categorize_action(
     return "Other"
 
 
+def _normalize_action_category(
+    category: ActionCategory,
+    *,
+    combine_retrieve: bool,
+) -> ActionCategory:
+    if combine_retrieve and category in {"Explore", "Search"}:
+        return "Retrieve"
+    return category
+
+
 def action_ngrams(
     blocks: Iterable[TrajectoryBlock],
     n: int = 4,
@@ -276,12 +298,14 @@ def write_trajectory_block_analysis(
     *,
     ngram_size: int = 4,
     include_copied_context: bool = False,
+    combine_retrieve: bool = False,
 ) -> dict[str, Path]:
     """Write TAR blocks and paper-style analysis views for one trajectory."""
     trajectory = load_trajectory(trajectory_path)
     blocks, diagnostics = _parse_trajectory_blocks_with_diagnostics(
         trajectory,
         include_copied_context=include_copied_context,
+        combine_retrieve=combine_retrieve,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -46,6 +46,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include ATIF steps marked as copied context.",
     )
+    parser.add_argument(
+        "--combine-retrieve",
+        action="store_true",
+        help="Temporarily combine Explore and Search categories into Retrieve.",
+    )
     return parser.parse_args()
 
 
@@ -66,6 +71,7 @@ def main() -> int:
             output_dir,
             ngram_size=args.ngram_size,
             include_copied_context=args.include_copied_context,
+            combine_retrieve=args.combine_retrieve,
         )
         generated += 1
         print(f"generated: {output_dir}")
