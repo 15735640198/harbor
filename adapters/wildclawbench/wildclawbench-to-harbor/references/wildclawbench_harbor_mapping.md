@@ -34,6 +34,31 @@ Each prepared task workspace may contain:
 - `tmp/` - temporary service fixtures copied to `/tmp_workspace/tmp`
 - `gt/` - hidden ground truth copied only to Harbor `tests/`
 
+## Resource Setup Checklist
+
+A fresh Harbor checkout needs external resources before strict conversion:
+
+1. Initialize `related-projects/external-tasks/WildClawBench`.
+2. Download the Hugging Face workspace with an explicit include:
+   `hf download internlm/WildClawBench --repo-type dataset --local-dir related-projects/external-tasks/WildClawBench --include "workspace/**"`.
+3. Run upstream `script/prepare.sh` with `yt-dlp`, `modelscope`, `socksio`, and
+   `httpx[socks]` available.
+4. If YouTube requires sign-in, configure `yt-dlp` cookies in
+   `~/.config/yt-dlp/config`; the upstream script does not expose extra
+   `yt-dlp` arguments.
+5. If YouTube reports challenge or unavailable-format errors, install a
+   JavaScript runtime such as `deno` for `yt-dlp`.
+6. Download and `docker load` `Images/wildclawbench-ubuntu_v1.3.tar`, then build
+   `adapters/wildclawbench/docker/openclaw/build.sh`.
+7. Convert with `--link-assets` to avoid duplicating the large prepared
+   workspace.
+
+The adapter intentionally allows missing `exec/` for
+`01_Productivity_Flow_task_1_arxiv_digest` and
+`01_Productivity_Flow_task_9_scp_crawl`; those paths are absent upstream or
+contain only hidden ground truth. Other missing `exec/` paths usually indicate
+an incomplete Hugging Face download or failed preparation step.
+
 ## Harbor Output Shape
 
 The adapter emits one Harbor multi-step task per upstream task:

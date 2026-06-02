@@ -14,22 +14,69 @@ The upstream repository is expected at
 `tasks/<category>/`, while large workspace data is downloaded separately from
 the Hugging Face dataset.
 
-Before generating the Harbor dataset, prepare the upstream workspace:
+Before generating the Harbor dataset, prepare the upstream workspace. Prefer the
+explicit include form so every nested workspace file is fetched:
 
 ```bash
-hf download internlm/WildClawBench workspace \
+uvx --from "huggingface_hub[cli]" --with "httpx[socks]" --with socksio \
+  hf download internlm/WildClawBench \
   --repo-type dataset \
-  --local-dir related-projects/external-tasks/WildClawBench
-
-bash related-projects/external-tasks/WildClawBench/script/prepare.sh
+  --local-dir related-projects/external-tasks/WildClawBench \
+  --include "workspace/**"
 ```
+
+If your environment uses a SOCKS proxy, include `socksio` and `httpx[socks]` as
+shown above. Without them, the Hugging Face or ModelScope clients may fail with
+`ImportError: Using SOCKS proxy, but the 'socksio' package is not installed`.
+
+Then run the upstream preparation script, which downloads/derives the large
+video assets, SAM model weights, and safety-task git fixtures:
+
+```bash
+cd related-projects/external-tasks/WildClawBench
+
+uv run \
+  --with yt-dlp \
+  --with modelscope \
+  --with socksio \
+  --with "httpx[socks]" \
+  bash script/prepare.sh
+
+cd ../../..
+```
+
+If YouTube asks for sign-in or bot confirmation, put cookies in the standard
+`yt-dlp` config file before rerunning `prepare.sh`:
+
+```bash
+mkdir -p ~/.config/yt-dlp
+printf '%s\n' '--cookies-from-browser chrome' > ~/.config/yt-dlp/config
+```
+
+If YouTube extraction reports missing formats or challenge-solving failures,
+install a JavaScript runtime for `yt-dlp`:
+
+```bash
+brew install deno
+uvx --from yt-dlp yt-dlp \
+  --js-runtimes deno \
+  --list-formats "https://www.youtube.com/watch?v=93LPZJkCW2w"
+```
+
+Two upstream tasks intentionally have no agent-visible `exec/` workspace:
+`01_Productivity_Flow_task_1_arxiv_digest` and
+`01_Productivity_Flow_task_9_scp_crawl`. The adapter allows those in strict
+mode. Other missing `exec/` paths generally mean the Hugging Face workspace
+download or preparation step is incomplete.
 
 Load the upstream base image:
 
 ```bash
-hf download internlm/WildClawBench Images/wildclawbench-ubuntu_v1.3.tar \
+uvx --from "huggingface_hub[cli]" --with "httpx[socks]" --with socksio \
+  hf download internlm/WildClawBench \
   --repo-type dataset \
-  --local-dir related-projects/external-tasks/WildClawBench
+  --local-dir related-projects/external-tasks/WildClawBench \
+  --include "Images/wildclawbench-ubuntu_v1.3.tar"
 
 docker load -i related-projects/external-tasks/WildClawBench/Images/wildclawbench-ubuntu_v1.3.tar
 ```

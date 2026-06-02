@@ -15,8 +15,10 @@ tasks
 - 10 high-quality 0-1 generation
 - all high-quality openclaw bench tasks
 
+- integrate clawbench project and analyze it
 
 - xiaoyi trace analysis POC
+    - what might causing a failure when using xiaoyi tools?
     - re-ran 147 using minimax, 分析不同模型 trajectory (kimi/minimax)
     - paper summary, the core idea of TAR, ATIF to TAR
     - paper result reproduce on Harbor ATIF
