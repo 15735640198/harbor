@@ -1,0 +1,62 @@
+---
+title: ClawBench Migration
+description: Notes for migrating ClawBench Core public tasks into Harbor.
+---
+
+ClawBench is migrated through `adapters/clawbench`. The adapter targets the
+Core v1 public manifest at `related-projects/external-tasks/clawbench/tasks-public/MANIFEST.yaml`.
+
+## Source Layout
+
+The upstream repository is expected at `related-projects/external-tasks/clawbench`.
+The public task directory contains 27 YAML files, but only 19 are part of the
+Core v1 manifest. The adapter uses the manifest as the default source of truth,
+so perturbed YAML variants are not generated unless support is added later.
+
+## Generate Tasks
+
+```bash
+uv run python adapters/clawbench/src/clawbench_adapter/main.py \
+  --output-dir datasets/clawbench \
+  --overwrite
+```
+
+Use `--link-assets` when generating on the same filesystem and you want to avoid
+duplicating the public asset packs.
+
+## Harbor Mapping
+
+Each manifest task becomes a Harbor task. Public asset packs are copied into
+`environment/workspace/`, and generated environments use `/workspace` as the
+workdir with `/app` symlinked to `/workspace` for compatibility.
+
+Single-user ClawBench tasks become one Harbor step named `run`. The memory
+continuation task becomes `prep` and `implementation` steps; the final step
+provides the trial reward.
+
+The verifier runtime is copied into each task's `tests/` directory. It scores
+ClawBench completion checks, process trajectory, behavior expectations, and the
+optional rubric judge. It writes a flat `/logs/verifier/reward.json` containing
+the Harbor `reward` plus `clawbench.*` component scores.
+
+## Judge Configuration
+
+Judge calls use Anthropic-compatible environment variables:
+
+```bash
+ANTHROPIC_API_KEY=...
+ANTHROPIC_BASE_URL=...
+MODEL_NAME=claude-sonnet-4-6
+```
+
+`OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, and `JUDGE_MODEL` are also accepted
+for parity with the WildClawBench job configuration.
+
+## Running
+
+```bash
+uv run harbor run -c examples/configs/clawbench-job.yaml
+```
+
+Official-style ClawBench reliability requires three attempts per task. The
+example config intentionally uses one attempt for local smoke runs.

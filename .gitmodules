@@ -4,3 +4,6 @@
 [submodule "related-projects/external-tasks/WildClawBench"]
 	path = related-projects/external-tasks/WildClawBench
 	url = https://github.com/InternLM/WildClawBench.git
+[submodule "related-projects/external-tasks/clawbench"]
+	path = related-projects/external-tasks/clawbench
+	url = https://github.com/openclaw/clawbench.git

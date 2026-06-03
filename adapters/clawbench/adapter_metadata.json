@@ -1,0 +1,30 @@
+[
+  {
+    "adapter_name": "clawbench",
+    "adapter_builders": [],
+    "original_benchmark": [
+      {
+        "split": "core-public-v1",
+        "size": 19,
+        "harness": "clawbench",
+        "supported_agents": ["openclaw"],
+        "adaptable": true,
+        "notes": "ClawBench Core v1 public tasks from related-projects/external-tasks/clawbench/tasks-public/MANIFEST.yaml."
+      }
+    ],
+    "harbor_adapter": [
+      {
+        "split": "core-public-v1",
+        "adapted_benchmark_size": 19,
+        "parity_benchmark_size": 19,
+        "parity_sampling_rate": 1.0,
+        "registry_benchmark_size": 19,
+        "added_agents": [],
+        "parity_matching_agents": ["openclaw"],
+        "parity_unmatching_agents": null,
+        "parity_costs": null,
+        "notes": "Generated tasks preserve ClawBench completion, trajectory, behavior, and optional judge scoring in the Harbor verifier."
+      }
+    ]
+  }
+]

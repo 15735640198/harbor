@@ -1,0 +1,6 @@
+{
+  "adapter": "clawbench",
+  "benchmark": "clawbench-core-v1",
+  "tasks": 19,
+  "notes": "Core public manifest tasks are adapted one-for-one. Official leaderboard-style reliability still requires running three attempts per task."
+}

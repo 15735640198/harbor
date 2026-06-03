@@ -1,0 +1,16 @@
+[project]
+name = "harbor-clawbench-adapter"
+version = "0.1.0"
+description = "Harbor adapter for ClawBench Core public tasks"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6.0"]
+
+[project.scripts]
+clawbench = "clawbench_adapter.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clawbench_adapter"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
