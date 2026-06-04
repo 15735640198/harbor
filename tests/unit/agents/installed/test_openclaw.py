@@ -38,6 +38,26 @@ def test_openclaw_configures_task_workspace(tmp_path: Path):
     assert run_command.cwd == "/task"
 
 
+def test_openclaw_uses_container_safe_gateway_env(tmp_path: Path):
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        extra_env={"ANTHROPIC_API_KEY": "test-key"},
+    )
+    agent.model_name = "anthropic/glm-4.7"
+
+    setup_command, run_command = agent.create_run_agent_commands(
+        "hello", workspace="/task"
+    )
+
+    assert setup_command.env is not None
+    assert setup_command.env["OPENCLAW_NO_RESPAWN"] == "1"
+    assert setup_command.env["NODE_COMPILE_CACHE"] == "/var/tmp/openclaw-compile-cache"
+    assert "mkdir -p /var/tmp/openclaw-compile-cache" in setup_command.command
+    assert run_command.env is not None
+    assert run_command.env["OPENCLAW_NO_RESPAWN"] == "1"
+    assert "mkdir -p /var/tmp/openclaw-compile-cache" in run_command.command
+
+
 def test_openclaw_skills_dir_returns_native_skills_command(tmp_path: Path):
     agent = OpenClaw(
         logs_dir=tmp_path,
@@ -232,6 +252,11 @@ async def test_openclaw_install_skips_apt_when_dependencies_exist(tmp_path: Path
     commands = [command for command, _ in environment.commands]
     assert not any("apt-get update" in command for command in commands)
     assert "upload:/installed-agent/install-openclaw.sh" in commands
+    install_script = (tmp_path / "install-openclaw.sh").read_text()
+    assert 'export OPENCLAW_NO_RESPAWN="${OPENCLAW_NO_RESPAWN:-1}"' in install_script
+    assert '"gateway": {' in install_script
+    assert '"mode": "local"' in install_script
+    assert '"token": "harbor-openclaw-local"' in install_script
 
 
 @pytest.mark.asyncio

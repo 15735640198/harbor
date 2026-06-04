@@ -269,7 +269,11 @@ fi
         # Note: Shell variables ($HOME) and globs (v22.*) are NOT expanded in env dicts —
         # Harbor passes them as literal strings. NVM is sourced explicitly in each command.
         api_key_env_var = f"{provider.upper()}_API_KEY"
-        env = {api_key_env_var: api_key}
+        env = {
+            api_key_env_var: api_key,
+            "NODE_COMPILE_CACHE": "/var/tmp/openclaw-compile-cache",
+            "OPENCLAW_NO_RESPAWN": "1",
+        }
 
         # Pass through base URL override if set
         base_url_env_var = f"{provider.upper()}_BASE_URL"
@@ -317,6 +321,7 @@ fi
 # Source NVM explicitly
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+mkdir -p /var/tmp/openclaw-compile-cache
 
 # Update openclaw.json with model, provider config, and model params
 node << 'NODE_EOF'
@@ -436,6 +441,7 @@ echo ""
 # Source NVM explicitly
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+mkdir -p /var/tmp/openclaw-compile-cache
 
 # Run OpenClaw agent with tee for persistent output (like Claude Code)
 # Output goes to both stdout (for base.py capture) and /logs/agent/ (survives timeout)

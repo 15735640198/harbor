@@ -3,6 +3,9 @@ set -euo pipefail
 
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-/var/tmp/openclaw-compile-cache}"
+export OPENCLAW_NO_RESPAWN="${OPENCLAW_NO_RESPAWN:-1}"
+mkdir -p "$NODE_COMPILE_CACHE"
 
 use_cached_openclaw=false
 if command -v openclaw >/dev/null 2>&1; then
@@ -77,6 +80,15 @@ cat > ~/.openclaw/openclaw.json << 'EOF'
   "models": {
     "mode": "merge",
     "providers": {}
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "harbor-openclaw-local"
+    }
   }
 }
 EOF

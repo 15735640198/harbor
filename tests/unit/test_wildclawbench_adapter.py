@@ -218,6 +218,19 @@ def _seed_fake_workspace(
         )
 
     for task in tasks:
+        if "gt" in task.automated_checks:
+            gt_dir = adapter.task_workspace_dir(task) / "gt"
+            gt_dir.mkdir(parents=True, exist_ok=True)
+            (gt_dir / "ground_truth.json").write_text(
+                '{"ok": true}\n', encoding="utf-8"
+            )
+
+    for task in tasks:
+        if task.source_id == "02_Code_Intelligence_task_2_sam3_debug":
+            exec_dir = adapter.task_workspace_dir(task) / "exec"
+            (exec_dir / "test_sam3.py").write_text("print('ok')\n", encoding="utf-8")
+
+    for task in tasks:
         if task.source_id != "05_Creative_Synthesis_task_11_video_en_to_zh_dub":
             continue
         gt_dir = adapter.task_workspace_dir(task) / "gt"

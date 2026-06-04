@@ -50,6 +50,10 @@ EMPTY_EXEC_WORKSPACE_TASK_IDS = frozenset(
     }
 )
 
+REQUIRED_WORKSPACE_FILES = {
+    "02_Code_Intelligence_task_2_sam3_debug": ("test_sam3.py",),
+}
+
 
 @dataclass(frozen=True)
 class WildClawBenchTask:
@@ -239,6 +243,7 @@ class WildClawBenchAdapter:
         elif not exec_dir.is_dir():
             raise NotADirectoryError(f"Expected exec/ directory: {exec_dir}")
         else:
+            self._validate_required_workspace_files(task, exec_dir)
             copy_dir_contents(exec_dir, workspace_out, link_files=self.link_assets)
 
         if tmp_dir.exists():
@@ -249,11 +254,32 @@ class WildClawBenchAdapter:
             )
 
         if not gt_dir.exists():
+            if self.strict_assets and automated_checks_require_gt(task):
+                raise FileNotFoundError(_missing_gt_message(task, task_workspace))
             return False
         if not gt_dir.is_dir():
             raise NotADirectoryError(f"Expected gt/ directory: {gt_dir}")
+        if self.strict_assets and automated_checks_require_gt(task):
+            gt_files = [path for path in gt_dir.rglob("*") if path.is_file()]
+            if not gt_files:
+                raise FileNotFoundError(_missing_gt_message(task, task_workspace))
         copy_tree(gt_dir, root_tests_dir / "gt", link_files=self.link_assets)
         return True
+
+    def _validate_required_workspace_files(
+        self, task: WildClawBenchTask, exec_dir: Path
+    ) -> None:
+        if not self.strict_assets:
+            return
+        missing = [
+            rel_path
+            for rel_path in REQUIRED_WORKSPACE_FILES.get(task.source_id, ())
+            if not (exec_dir / rel_path).exists()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                _missing_required_workspace_files_message(task, exec_dir, missing)
+            )
 
     def _stage_skills(self, task: WildClawBenchTask, skills_out: Path) -> bool:
         copied_any = False
@@ -651,12 +677,53 @@ def _task_sort_key(path: Path) -> tuple[int, int, str]:
 def _missing_assets_message(task: WildClawBenchTask, task_workspace: Path) -> str:
     return (
         f"Prepared WildClawBench workspace missing for {task.source_id}: "
-        f"{task_workspace / 'exec'}\n\n"
+        + f"{task_workspace / 'exec'}\n\n"
+        + _wildclawbench_prepare_guidance()
+        + "Then rerun the adapter, or pass --no-strict-assets for structural smoke tests."
+    )
+
+
+def _missing_gt_message(task: WildClawBenchTask, task_workspace: Path) -> str:
+    return (
+        f"Prepared WildClawBench hidden gt/ data missing or empty for "
+        f"{task.source_id}: {task_workspace / 'gt'}\n\n"
+        "This task's embedded grader references gt/ data, so the converted task "
+        "would fail verification.\n\n"
+        f"{_wildclawbench_prepare_guidance()}"
+        "Then rerun the adapter."
+    )
+
+
+def _missing_required_workspace_files_message(
+    task: WildClawBenchTask, exec_dir: Path, missing: list[str]
+) -> str:
+    missing_lines = "\n".join(f"  - {rel_path}" for rel_path in missing)
+    return (
+        f"Prepared WildClawBench workspace incomplete for {task.source_id}: "
+        f"{exec_dir}\n\n"
+        f"Missing required file(s):\n{missing_lines}\n\n"
+        f"{_wildclawbench_prepare_guidance()}"
+        "Then rerun the adapter."
+    )
+
+
+def _wildclawbench_prepare_guidance() -> str:
+    return (
         "Download and prepare upstream data first:\n"
         "  hf download internlm/WildClawBench workspace --repo-type dataset "
         "--local-dir related-projects/external-tasks/WildClawBench\n"
         "  bash related-projects/external-tasks/WildClawBench/script/prepare.sh\n\n"
-        "Then rerun the adapter, or pass --no-strict-assets for structural smoke tests."
+        "If the workspace was partially downloaded, force a re-download of the "
+        "affected task path before running prepare.sh again.\n\n"
+    )
+
+
+def automated_checks_require_gt(task: WildClawBenchTask) -> bool:
+    checks = task.automated_checks
+    return bool(
+        re.search(r'["\']/tmp_workspace/gt(?:/|["\'])', checks)
+        or re.search(r'["\']gt/[^"\']+', checks)
+        or re.search(r'/\s*["\']gt["\']', checks)
     )
 
 
