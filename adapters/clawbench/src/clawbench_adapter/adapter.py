@@ -309,6 +309,7 @@ class ClawBenchAdapter:
                 && rm -rf /var/lib/apt/lists/*
             RUN python3 -m pip install --break-system-packages --no-cache-dir pytest
             ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+            ENV NODE_PATH={WORKDIR}/node_modules
             RUN if command -v npx >/dev/null 2>&1; then \\
                     cd /tmp && npx -y playwright@1.59.1 install --with-deps chromium && \\
                     CHROME_PATH="$(find /ms-playwright -path '*/chrome' -type f | sort | head -n 1)" && \\
@@ -318,6 +319,9 @@ class ClawBenchAdapter:
                 && rm -rf /app \\
                 && ln -s {WORKDIR} /app \\
                 && chmod -R 777 {WORKDIR} /logs
+            RUN if command -v npm >/dev/null 2>&1; then \\
+                    npm install --prefix {WORKDIR} --omit=dev --no-audit --no-fund playwright@1.59.1; \\
+                fi
             WORKDIR {WORKDIR}
             COPY workspace/ {WORKDIR}/
             """

@@ -216,6 +216,36 @@ def test_judge_parser_and_composite_rules() -> None:
 
 
 @pytest.mark.unit
+def test_write_reward_keeps_harbor_rewards_numeric(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = load_runtime()
+    reward_path = tmp_path / "reward.json"
+    details_path = tmp_path / "clawbench_details.json"
+    monkeypatch.setattr(runtime, "REWARD_PATH", reward_path)
+    monkeypatch.setattr(runtime, "DETAILS_PATH", details_path)
+
+    runtime.write_reward(
+        {
+            "reward": 0.75,
+            "clawbench.run_score": 0.75,
+            "clawbench.delivery_outcome": "pass",
+            "completion_result": {"score": 1.0},
+        }
+    )
+
+    reward_payload = runtime.json.loads(reward_path.read_text(encoding="utf-8"))
+    details_payload = runtime.json.loads(details_path.read_text(encoding="utf-8"))
+
+    assert reward_payload == {
+        "reward": 0.75,
+        "clawbench.run_score": 0.75,
+    }
+    assert details_payload["clawbench.delivery_outcome"] == "pass"
+    assert details_payload["completion_result"] == {"score": 1.0}
+
+
+@pytest.mark.unit
 def test_openai_compatible_judge_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime = load_runtime()
     captured = {}

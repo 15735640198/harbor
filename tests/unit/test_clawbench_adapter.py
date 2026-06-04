@@ -105,6 +105,9 @@ def test_clawbench_generates_representative_tasks(tmp_path: Path) -> None:
     dockerfile = (coding_task / "environment" / "Dockerfile").read_text()
     assert "FROM --platform=linux/amd64 ghcr.io/openclaw/openclaw@" in dockerfile
     assert "HEALTHCHECK NONE" in dockerfile
+    assert "ENV NODE_PATH=/workspace/node_modules" in dockerfile
+    assert "npm install --prefix /workspace" in dockerfile
+    assert "playwright@1.59.1" in dockerfile
     task_toml = (coding_task / "task.toml").read_text()
     assert 'MODEL_NAME = "${MODEL_NAME:-glm-5.1}"' in task_toml
     assert 'JUDGE_API_FORMAT = "${JUDGE_API_FORMAT:-auto}"' in task_toml

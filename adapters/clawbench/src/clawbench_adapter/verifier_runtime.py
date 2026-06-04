@@ -21,6 +21,7 @@ WORKSPACE = Path("/workspace")
 TESTS_DIR = Path("/tests")
 LOGS_AGENT = Path("/logs/agent")
 REWARD_PATH = Path("/logs/verifier/reward.json")
+DETAILS_PATH = Path("/logs/verifier/clawbench_details.json")
 ERROR_PATH = Path("/logs/verifier/error.txt")
 TASK_PATH = TESTS_DIR / "clawbench_task.json"
 
@@ -1504,8 +1505,16 @@ def build_reward_payload(
 
 def write_reward(payload: dict[str, Any]) -> None:
     REWARD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    reward_payload = {
+        key: value for key, value in payload.items() if isinstance(value, int | float)
+    }
     REWARD_PATH.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        json.dumps(reward_payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    DETAILS_PATH.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 

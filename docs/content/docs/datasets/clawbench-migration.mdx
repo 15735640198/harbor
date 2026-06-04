@@ -37,13 +37,19 @@ provides the trial reward.
 The verifier runtime is copied into each task's `tests/` directory. It scores
 ClawBench completion checks, process trajectory, behavior expectations, and the
 optional rubric judge. It writes a flat `/logs/verifier/reward.json` containing
-the Harbor `reward` plus `clawbench.*` component scores.
+the Harbor `reward` plus numeric `clawbench.*` component scores. Rich ClawBench
+details such as delivery outcome strings, assertion traces, trajectory details,
+and judge rationales are written to `/logs/verifier/clawbench_details.json`
+because Harbor reward values must be numeric.
 
 The default base image is the pinned OpenClaw image used by upstream ClawBench.
 It is currently amd64, so generated Dockerfiles use `FROM --platform=linux/amd64`.
 They also include `HEALTHCHECK NONE` because Harbor replaces the container
 command with `sleep infinity`; inheriting OpenClaw's app healthcheck would make
 Docker Compose report the idle task container as unhealthy.
+The generated environment installs the Playwright browser and the Node
+`playwright` package under `/workspace/node_modules` so verifier scripts can use
+`require("playwright")`.
 
 ## Judge Configuration
 
