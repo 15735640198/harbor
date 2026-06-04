@@ -9,6 +9,8 @@ from pathlib import Path
 try:
     from clawbench_adapter.adapter import (
         DEFAULT_BASE_IMAGE,
+        DEFAULT_BASE_PLATFORM,
+        DEFAULT_JUDGE_MODEL,
         DEFAULT_MANIFEST,
         DEFAULT_SOURCE_DIR,
         DEFAULT_TASKS_ROOT,
@@ -21,6 +23,8 @@ except ImportError:  # pragma: no cover - supports direct source execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from clawbench_adapter.adapter import (
         DEFAULT_BASE_IMAGE,
+        DEFAULT_BASE_PLATFORM,
+        DEFAULT_JUDGE_MODEL,
         DEFAULT_MANIFEST,
         DEFAULT_SOURCE_DIR,
         DEFAULT_TASKS_ROOT,
@@ -44,8 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--link-assets", action="store_true")
     parser.add_argument("--base-image", default=DEFAULT_BASE_IMAGE)
+    parser.add_argument("--base-platform", default=DEFAULT_BASE_PLATFORM)
     parser.add_argument("--org", default="clawbench")
-    parser.add_argument("--judge-model", default="claude-sonnet-4-6")
+    parser.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL)
     parser.add_argument("--no-validate", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     return parser
@@ -67,6 +72,7 @@ def main(argv: list[str] | None = None) -> None:
         overwrite=args.overwrite,
         task_ids=args.task_ids,
         base_image=args.base_image,
+        base_platform=args.base_platform,
         link_assets=args.link_assets,
         org=args.org,
         judge_model=args.judge_model,

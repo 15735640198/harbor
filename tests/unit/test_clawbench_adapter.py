@@ -102,6 +102,14 @@ def test_clawbench_generates_representative_tasks(tmp_path: Path) -> None:
     coding_task = output_dir / "t1-bugfix-discount"
     assert (coding_task / "environment" / "workspace" / "pricing.py").exists()
     assert (coding_task / "steps" / "run" / "tests" / "test.sh").exists()
+    dockerfile = (coding_task / "environment" / "Dockerfile").read_text()
+    assert "FROM --platform=linux/amd64 ghcr.io/openclaw/openclaw@" in dockerfile
+    assert "HEALTHCHECK NONE" in dockerfile
+    task_toml = (coding_task / "task.toml").read_text()
+    assert 'MODEL_NAME = "${MODEL_NAME:-glm-5.1}"' in task_toml
+    assert 'JUDGE_API_FORMAT = "${JUDGE_API_FORMAT:-auto}"' in task_toml
+    assert 'OPENAI_API_KEY = "${OPENAI_API_KEY:-}"' in task_toml
+    assert 'OPENAI_BASE_URL = "${OPENAI_BASE_URL:-}"' in task_toml
 
     browser_task = output_dir / "t2-browser-form-fix"
     setup = (browser_task / "steps" / "run" / "workdir" / "setup.sh").read_text()

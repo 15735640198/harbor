@@ -39,18 +39,36 @@ ClawBench completion checks, process trajectory, behavior expectations, and the
 optional rubric judge. It writes a flat `/logs/verifier/reward.json` containing
 the Harbor `reward` plus `clawbench.*` component scores.
 
+The default base image is the pinned OpenClaw image used by upstream ClawBench.
+It is currently amd64, so generated Dockerfiles use `FROM --platform=linux/amd64`.
+They also include `HEALTHCHECK NONE` because Harbor replaces the container
+command with `sleep infinity`; inheriting OpenClaw's app healthcheck would make
+Docker Compose report the idle task container as unhealthy.
+
 ## Judge Configuration
 
-Judge calls use Anthropic-compatible environment variables:
+Judge calls default to the same GLM-oriented configuration as PinchBench and
+WildClawBench. Anthropic-compatible gateways can use:
 
 ```bash
 ANTHROPIC_API_KEY=...
 ANTHROPIC_BASE_URL=...
-MODEL_NAME=claude-sonnet-4-6
+MODEL_NAME=glm-5.1
 ```
 
-`OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, and `JUDGE_MODEL` are also accepted
-for parity with the WildClawBench job configuration.
+OpenAI-compatible gateways are also supported:
+
+```bash
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=...
+MODEL_NAME=glm-5.1
+JUDGE_API_FORMAT=openai
+```
+
+`OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, and `JUDGE_MODEL` are accepted for
+parity with the WildClawBench job configuration. `JUDGE_API_FORMAT` can be
+`auto`, `anthropic`, or `openai`; `auto` selects OpenAI format when `OPENAI_*`
+judge variables are provided.
 
 ## Running
 

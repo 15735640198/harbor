@@ -213,3 +213,46 @@ def test_judge_parser_and_composite_rules() -> None:
     assert malformed["error"]
     assert deterministic_failed < 1.0
     assert deterministic_passed == 0.95
+
+
+@pytest.mark.unit
+def test_openai_compatible_judge_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = load_runtime()
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self) -> bytes:
+            return (
+                b'{"choices":[{"message":{"content":"{\\"score\\": 1.0, '
+                b'\\"confidence\\": 0.8, \\"reason\\": \\"ok\\", '
+                b'\\"rubric_hits\\": [], \\"rubric_misses\\": []}"}}]}'
+            )
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        captured["headers"] = dict(request.header_items())
+        captured["payload"] = runtime.json.loads(request.data.decode("utf-8"))
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "custom-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://judge.example/v1")
+    monkeypatch.setenv("JUDGE_API_FORMAT", "openai")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.setattr(runtime.urllib.request, "urlopen", fake_urlopen)
+
+    text = runtime.call_judge_provider("score this", "glm-5.1")
+
+    assert '"score": 1.0' in text
+    assert captured["url"] == "https://judge.example/v1/chat/completions"
+    assert captured["timeout"] == 120
+    assert captured["headers"]["Authorization"] == "Bearer custom-key"
+    assert captured["payload"]["model"] == "glm-5.1"
+    assert captured["payload"]["messages"][0]["content"] == "score this"

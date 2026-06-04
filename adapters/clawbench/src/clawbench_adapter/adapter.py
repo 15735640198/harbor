@@ -34,6 +34,8 @@ DEFAULT_BASE_IMAGE = (
     "ghcr.io/openclaw/openclaw@sha256:"
     "2e32f4f2e4f653f12d5dc6e5c93cc71e60f49d1dfaf061b18e53c3e61a38fb48"
 )
+DEFAULT_BASE_PLATFORM = "linux/amd64"
+DEFAULT_JUDGE_MODEL = "glm-5.1"
 WORKDIR = "/workspace"
 RUN_STEP_NAME = "run"
 RUNTIME_FILENAME = "clawbench_verifier_runtime.py"
@@ -73,9 +75,10 @@ class ClawBenchAdapter:
         overwrite: bool = False,
         task_ids: list[str] | None = None,
         base_image: str = DEFAULT_BASE_IMAGE,
+        base_platform: str = DEFAULT_BASE_PLATFORM,
         link_assets: bool = False,
         org: str = "clawbench",
-        judge_model: str = "claude-sonnet-4-6",
+        judge_model: str = DEFAULT_JUDGE_MODEL,
         validate: bool = True,
     ) -> None:
         self.output_dir = output_dir
@@ -89,6 +92,7 @@ class ClawBenchAdapter:
         self.overwrite = overwrite
         self.task_ids = task_ids
         self.base_image = base_image
+        self.base_platform = base_platform
         self.link_assets = link_assets
         self.org = org
         self.judge_model = judge_model
@@ -237,10 +241,13 @@ class ClawBenchAdapter:
                 "[verifier.env]",
                 'ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY:-}"',
                 'ANTHROPIC_BASE_URL = "${ANTHROPIC_BASE_URL:-}"',
+                'OPENAI_API_KEY = "${OPENAI_API_KEY:-}"',
+                'OPENAI_BASE_URL = "${OPENAI_BASE_URL:-}"',
                 'OPENROUTER_API_KEY = "${OPENROUTER_API_KEY:-}"',
                 'OPENROUTER_BASE_URL = "${OPENROUTER_BASE_URL:-}"',
-                f"MODEL_NAME = {toml_string(self.judge_model)}",
+                f"MODEL_NAME = {toml_string(f'${{MODEL_NAME:-{self.judge_model}}}')}",
                 'JUDGE_MODEL = "${JUDGE_MODEL:-}"',
+                'JUDGE_API_FORMAT = "${JUDGE_API_FORMAT:-auto}"',
                 "",
                 "[agent]",
                 f"timeout_sec = {timeout:.1f}",
@@ -258,6 +265,8 @@ class ClawBenchAdapter:
                 "[environment.env]",
                 'ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY:-}"',
                 'ANTHROPIC_BASE_URL = "${ANTHROPIC_BASE_URL:-}"',
+                'OPENAI_API_KEY = "${OPENAI_API_KEY:-}"',
+                'OPENAI_BASE_URL = "${OPENAI_BASE_URL:-}"',
                 'OPENROUTER_API_KEY = "${OPENROUTER_API_KEY:-}"',
                 'OPENROUTER_BASE_URL = "${OPENROUTER_BASE_URL:-}"',
                 "",
@@ -285,11 +294,15 @@ class ClawBenchAdapter:
         return "\n".join(lines) + "\n"
 
     def _render_dockerfile(self) -> str:
+        from_line = f"FROM {self.base_image}"
+        if self.base_platform:
+            from_line = f"FROM --platform={self.base_platform} {self.base_image}"
         return textwrap.dedent(
             f"""\
-            FROM {self.base_image}
+            {from_line}
 
             USER root
+            HEALTHCHECK NONE
             ENV DEBIAN_FRONTEND=noninteractive
             RUN apt-get update \\
                 && apt-get install -y python3-pip python-is-python3 curl \\

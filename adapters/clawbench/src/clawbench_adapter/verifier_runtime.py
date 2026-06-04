@@ -1018,7 +1018,7 @@ async def judge_task_run(
     prompt = build_judge_prompt(task, judge, transcript, completion_result)
     started = time.monotonic()
     try:
-        raw_text = await asyncio.to_thread(call_anthropic_compatible, prompt, model)
+        raw_text = await asyncio.to_thread(call_judge_provider, prompt, model)
         result = parse_judge_response(
             raw_text, float(judge.get("passing_threshold") or 0.7)
         )
@@ -1143,17 +1143,39 @@ def render_transcript_excerpt(transcript: dict[str, Any], max_chars: int) -> str
     return rendered[:max_chars]
 
 
+def call_judge_provider(prompt: str, model: str) -> str:
+    api_format = os.environ.get("JUDGE_API_FORMAT", "auto").strip().lower() or "auto"
+    if api_format not in {"auto", "anthropic", "openai"}:
+        raise RuntimeError("JUDGE_API_FORMAT must be one of: auto, anthropic, openai")
+    if api_format == "openai" or (
+        api_format == "auto"
+        and (
+            os.environ.get("OPENAI_BASE_URL")
+            or (
+                os.environ.get("OPENAI_API_KEY")
+                and not os.environ.get("ANTHROPIC_API_KEY")
+                and not os.environ.get("OPENROUTER_API_KEY")
+            )
+        )
+    ):
+        return call_openai_compatible(prompt, model)
+    return call_anthropic_compatible(prompt, model)
+
+
 def call_anthropic_compatible(prompt: str, model: str) -> str:
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
-        "OPENROUTER_API_KEY"
+    api_key = (
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("OPENROUTER_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
     )
     if not api_key:
         raise RuntimeError(
-            "ANTHROPIC_API_KEY or OPENROUTER_API_KEY is required for judge scoring"
+            "ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY is required for judge scoring"
         )
     base_url = (
         os.environ.get("ANTHROPIC_BASE_URL")
         or os.environ.get("OPENROUTER_BASE_URL")
+        or os.environ.get("OPENAI_BASE_URL")
         or "https://api.anthropic.com"
     ).rstrip("/")
     url = base_url
@@ -1190,6 +1212,60 @@ def call_anthropic_compatible(prompt: str, model: str) -> str:
             str(block.get("text", "")) for block in content if isinstance(block, dict)
         )
     return str(content)
+
+
+def call_openai_compatible(prompt: str, model: str) -> str:
+    api_key = (
+        os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("OPENROUTER_API_KEY")
+    )
+    if not api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY is required for judge scoring"
+        )
+    base_url = (
+        os.environ.get("OPENAI_BASE_URL")
+        or os.environ.get("ANTHROPIC_BASE_URL")
+        or os.environ.get("OPENROUTER_BASE_URL")
+        or "https://api.openai.com/v1"
+    ).rstrip("/")
+    url = base_url
+    if not url.endswith("/chat/completions"):
+        if url.endswith("/v1"):
+            url = f"{url}/chat/completions"
+        else:
+            url = f"{url}/v1/chat/completions"
+    payload = {
+        "model": model,
+        "max_tokens": 1024,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "content-type": "application/json",
+            "authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"judge request failed HTTP {exc.code}: {body[:1000]}"
+        ) from exc
+    parsed = json.loads(raw)
+    choices = parsed.get("choices") or []
+    if choices and isinstance(choices[0], dict):
+        message = choices[0].get("message") or {}
+        if isinstance(message, dict):
+            return str(message.get("content", ""))
+        return str(message)
+    return str(parsed.get("content") or "")
 
 
 def parse_judge_response(raw_text: str, passing_threshold: float) -> dict[str, Any]:
