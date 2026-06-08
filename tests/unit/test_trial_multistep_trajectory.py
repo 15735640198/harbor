@@ -127,6 +127,53 @@ def test_write_multi_step_trajectory_records_missing_step_trajectories(
     ]
 
 
+def test_write_multi_step_verifier_transcript_includes_prior_and_current_steps(
+    tmp_path: Path,
+) -> None:
+    trial = _make_trial(tmp_path)
+    trial.result.step_results = [
+        StepResult(step_name="first"),
+        StepResult(step_name="second"),
+    ]
+    _write_step_trajectory(
+        trial._trial_paths.step_agent_dir("first") / "trajectory.json",
+        session_id="s1",
+        message="first step",
+        prompt_tokens=10,
+        completion_tokens=2,
+    )
+    _write_step_trajectory(
+        trial._trial_paths.agent_dir / "trajectory.json",
+        session_id="s2",
+        message="second step",
+        prompt_tokens=20,
+        completion_tokens=3,
+    )
+
+    trial._write_multi_step_verifier_transcript()
+
+    payload = json.loads(
+        (trial._trial_paths.agent_dir / "000-multi-step-transcript.json").read_text()
+    )
+    assert payload["harbor_multi_step"] is True
+    assert [message["message"]["content"] for message in payload["messages"]] == [
+        "first step",
+        "second step",
+    ]
+    assert [message["message"]["role"] for message in payload["messages"]] == [
+        "assistant",
+        "assistant",
+    ]
+    assert payload["step_trajectories"] == [
+        {
+            "step_name": "first",
+            "path": "steps/first/agent/trajectory.json",
+            "steps": 1,
+        },
+        {"step_name": "second", "path": "agent/trajectory.json", "steps": 1},
+    ]
+
+
 def test_reset_agent_post_run_state_for_step_resets_reused_installed_agent(
     tmp_path: Path,
 ) -> None:

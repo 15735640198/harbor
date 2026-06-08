@@ -674,6 +674,7 @@ class Trial:
                         if step_cfg.verifier.user is not None
                         else self._task.config.verifier.user
                     )
+                    self._write_multi_step_verifier_transcript()
                     await self._maybe_upload_agent_logs()
                     await self._verify_step(step_cfg, step_result)
                     _relocate_dir_contents(
@@ -819,6 +820,77 @@ class Trial:
         (self._trial_paths.agent_dir / "trajectory.json").write_text(
             json.dumps(aggregate.to_json_dict(), indent=2, ensure_ascii=False),
             encoding="utf-8",
+        )
+
+    def _write_multi_step_verifier_transcript(self) -> None:
+        """Write a verifier-friendly transcript for completed multi-step logs.
+
+        Some benchmark verifiers load the first JSON/JSONL transcript they find
+        under ``/logs/agent`` and expect it to contain the whole chained
+        interaction. During multi-step execution, the root agent dir contains
+        only the current step while prior steps have already been relocated to
+        ``steps/{name}/agent``. This root-level aggregate lets the current
+        verifier see prior step transcript content without losing the isolated
+        per-step logs.
+        """
+        if not self.result.step_results:
+            return
+
+        messages: list[dict[str, Any]] = []
+        sources: list[dict[str, str | int]] = []
+
+        for step_result in self.result.step_results:
+            step_name = step_result.step_name
+            step_agent_dir = self._trial_paths.step_agent_dir(step_name)
+            trajectory_path = step_agent_dir / "trajectory.json"
+            if not trajectory_path.exists():
+                current_step_index = len(self.result.step_results) - 1
+                if step_result is self.result.step_results[current_step_index]:
+                    trajectory_path = self._trial_paths.agent_dir / "trajectory.json"
+            if not trajectory_path.exists():
+                continue
+
+            try:
+                trajectory = Trajectory.model_validate_json(trajectory_path.read_text())
+            except Exception:
+                continue
+
+            sources.append(
+                {
+                    "step_name": step_name,
+                    "path": trajectory_path.relative_to(
+                        self._trial_paths.trial_dir
+                    ).as_posix(),
+                    "steps": len(trajectory.steps),
+                }
+            )
+            for step in trajectory.steps:
+                role = "assistant" if step.source == "agent" else "user"
+                messages.append(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": role,
+                            "content": step.message,
+                        },
+                        "harbor_step_name": step_name,
+                        "harbor_original_step_id": step.step_id,
+                        "source": step.source,
+                    }
+                )
+
+        if not messages:
+            return
+
+        payload = {
+            "messages": messages,
+            "harbor_multi_step": True,
+            "source": "multi_step_verifier_transcript",
+            "step_trajectories": sources,
+        }
+        self._trial_paths.agent_dir.mkdir(parents=True, exist_ok=True)
+        (self._trial_paths.agent_dir / "000-multi-step-transcript.json").write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
     def _aggregate_multi_step_final_metrics(
