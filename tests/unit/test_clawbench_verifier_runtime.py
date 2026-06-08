@@ -148,6 +148,64 @@ def test_trajectory_normalizes_atif_shell_steps() -> None:
 
 
 @pytest.mark.unit
+def test_trajectory_normalizes_atif_tool_call_fields() -> None:
+    runtime = load_runtime()
+    transcript = {
+        "messages": [
+            {
+                "role": "assistant",
+                "text": "",
+                "tool_calls": [
+                    runtime.normalize_tool_call(
+                        {
+                            "tool_call_id": "call_read",
+                            "function_name": "read",
+                            "arguments": {"path": "/workspace/pipeline.py"},
+                        }
+                    ),
+                    runtime.normalize_tool_call(
+                        {
+                            "tool_call_id": "call_edit",
+                            "function_name": "edit",
+                            "arguments": {
+                                "path": "/workspace/pipeline.py",
+                                "edits": [],
+                            },
+                        }
+                    ),
+                    runtime.normalize_tool_call(
+                        {
+                            "tool_call_id": "call_exec",
+                            "function_name": "exec",
+                            "arguments": {
+                                "command": "python3 pipeline.py input/sales.csv"
+                            },
+                        }
+                    ),
+                ],
+            }
+        ]
+    }
+
+    calls = runtime.tool_call_sequence(transcript)
+    result = runtime.evaluate_trajectory(
+        transcript,
+        {
+            "required_families": ["read", "edit", "execute"],
+            "min_distinct_families": 3,
+            "require_read_before_mutation": True,
+            "require_self_verification": True,
+        },
+    )
+
+    assert [call["id"] for call in calls] == ["call_read", "call_edit", "call_exec"]
+    assert result["distinct_families"] == ["edit", "execute", "read"]
+    assert result["required_families_missing"] == []
+    assert result["self_verified"] is True
+    assert result["score"] > 0.8
+
+
+@pytest.mark.unit
 def test_behavior_scoring_detects_plan_progress_and_blocker() -> None:
     runtime = load_runtime()
     transcript = {

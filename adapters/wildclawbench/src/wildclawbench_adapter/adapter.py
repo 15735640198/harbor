@@ -564,9 +564,18 @@ def parse_codeblock_lines(raw: str) -> list[str]:
 
 
 def extract_python_code(section_text: str) -> str:
-    match = re.search(r"```python\s*(.*?)\s*```", section_text, re.DOTALL)
-    if match:
-        return match.group(1).strip() + "\n"
+    lines = section_text.strip().splitlines()
+    in_python_block = False
+    collected: list[str] = []
+    for line in lines:
+        if not in_python_block:
+            if re.match(r"^```\s*python\s*$", line, re.IGNORECASE):
+                in_python_block = True
+            continue
+        if re.match(r"^```\s*$", line):
+            return "\n".join(collected).strip() + "\n"
+        collected.append(line)
+
     stripped = strip_codeblock(section_text)
     if "def grade" not in stripped:
         raise ValueError("Automated Checks section does not contain a grade function")

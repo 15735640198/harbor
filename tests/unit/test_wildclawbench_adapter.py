@@ -17,6 +17,7 @@ from wildclawbench_adapter.adapter import (  # noqa: E402
     DEFAULT_SOURCE_DIR,
     WildClawBenchAdapter,
     WildClawBenchTask,
+    extract_python_code,
 )
 
 
@@ -50,6 +51,23 @@ def test_wildclawbench_parser_counts(tmp_path: Path) -> None:
     assert all(task.prompt for task in adapter.tasks)
     assert all(task.automated_checks for task in adapter.tasks)
     assert all(task.workspace_path.startswith("workspace/") for task in adapter.tasks)
+
+
+@pytest.mark.unit
+def test_wildclawbench_extracts_python_with_embedded_markdown_fences() -> None:
+    section = r"""```python
+def grade():
+    result_text = "```json\n{}"
+    if result_text.startswith("```"):
+        result_text = result_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    return {"overall_score": 1.0}
+```"""
+
+    code = extract_python_code(section)
+
+    assert 'result_text.startswith("```")' in code
+    assert 'result_text.split("\\n", 1)' in code
+    compile(code, "<wildclawbench-grade>", "exec")
 
 
 @pytest.mark.unit

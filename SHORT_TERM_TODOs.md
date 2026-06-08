@@ -1,0 +1,26 @@
+- 部分指标评测方案（他们提的）
+    - 幻觉
+        - 幻觉完成
+        - Environment-state verification
+        - thinking block 幻觉 （thinking 依据了 tool result）
+    - 指令遵从（需要专门的用例）
+        - system prompt
+            - 安全隐私（放在安全拦截率里？）
+            - 业务流程相关
+            - skill/tool 相关
+        - user prompt
+            - 指令拆解
+    - 工具调用准确率（任务强相关）（和任务本身的完成相关）
+    - 系统失效率（需要专门的用例）
+        - loop: max turn, repeat tool call, timeout（需要假的模型接口）
+    - 安全拦截率（需要专门的用例）
+        - 使用特定的 task 验证，用例相关的
+- task 一致性指标
+- trace 归因系统（agentic + deterministic）
+    - 结果归因（critical failure + hallucination）
+    - TAR block & pattern
+    - 基于小艺 claw tool 的约束验证
+    - 小艺 claw skill？
+    - 结果汇总
+- 小艺 tool 分析
+

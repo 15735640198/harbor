@@ -550,7 +550,7 @@ def extract_tool_calls(item: dict[str, Any]) -> list[dict[str, Any]]:
         for call in raw_calls:
             if isinstance(call, dict):
                 calls.append(normalize_tool_call(call))
-    for key in ("tool", "tool_name", "action", "command", "function"):
+    for key in ("tool", "tool_name", "action", "command", "function", "function_name"):
         if item.get(key):
             calls.append(normalize_tool_call(item))
             break
@@ -565,6 +565,7 @@ def normalize_tool_call(call: dict[str, Any]) -> dict[str, Any]:
         or call.get("action")
         or call.get("command")
         or call.get("function")
+        or call.get("function_name")
         or "unknown"
     )
     input_payload = call.get("input") or call.get("arguments") or call.get("args") or {}
@@ -582,7 +583,7 @@ def normalize_tool_call(call: dict[str, Any]) -> dict[str, Any]:
         or ""
     )
     normalized = {
-        "id": str(call.get("id") or ""),
+        "id": str(call.get("id") or call.get("tool_call_id") or ""),
         "name": name,
         "input": input_payload,
         "output": output
