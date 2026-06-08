@@ -504,11 +504,17 @@ def main() -> None:
     if GRADING_TYPE == "hybrid":
         automated_score, automated_scores = run_automated_grade(GRADE_SOURCE)
 
-    judge_score, judge_scores, notes = run_llm_judge(
-        task_prompt=TASK_PROMPT,
-        expected_behavior=EXPECTED_BEHAVIOR,
-        rubric=RUBRIC,
-    )
+    try:
+        judge_score, judge_scores, notes = run_llm_judge(
+            task_prompt=TASK_PROMPT,
+            expected_behavior=EXPECTED_BEHAVIOR,
+            rubric=RUBRIC,
+        )
+    except Exception as exc:
+        traceback.print_exc()
+        judge_score = 0.0
+        judge_scores = {{"judge_error": 1.0}}
+        notes = f"LLM judge failed: {{type(exc).__name__}}: {{exc}}"
 
     if GRADING_TYPE == "hybrid":
         total_weight = AUTOMATED_WEIGHT + LLM_JUDGE_WEIGHT
@@ -550,6 +556,11 @@ GENERATED_LLM_PREFIX = """#!/usr/bin/env python3
 #   "pydantic==2.12.5",
 # ]
 # ///
+
+import os
+
+from anthropic import Anthropic
+from pydantic import BaseModel, Field
 """
 
 
@@ -683,12 +694,6 @@ def write_reward(payload: dict[str, float | int]) -> None:
 
 
 GENERATED_LLM_HELPERS_PY = """
-import os
-
-from anthropic import Anthropic
-from pydantic import BaseModel, Field
-
-
 class JudgeResponse(BaseModel):
     scores: dict[str, float] = Field(default_factory=dict)
     total: float = Field(..., ge=0.0, le=1.0)
@@ -773,7 +778,41 @@ def extract_response_text(response: Any) -> str:
             text = block.get("text")
             if isinstance(text, str) and text.strip():
                 return text
+            content = block.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+    for candidate in iter_response_strings(response):
+        if "{" in candidate and "}" in candidate:
+            return candidate
     raise ValueError("LLM judge response did not include a text content block")
+
+
+def iter_response_strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        strings: list[str] = []
+        for key in ("text", "content", "message", "output_text", "output", "completion", "response"):
+            item = value.get(key)
+            if isinstance(item, str) and item.strip():
+                strings.append(item)
+        for item in value.values():
+            strings.extend(iter_response_strings(item))
+        return strings
+    if isinstance(value, list):
+        strings = []
+        for item in value:
+            strings.extend(iter_response_strings(item))
+        return strings
+    for attr in ("model_dump", "dict"):
+        method = getattr(value, attr, None)
+        if callable(method):
+            try:
+                dumped = method()
+            except Exception:
+                continue
+            return iter_response_strings(dumped)
+    return []
 
 
 def parse_judge_response(text: str) -> JudgeResponse:
