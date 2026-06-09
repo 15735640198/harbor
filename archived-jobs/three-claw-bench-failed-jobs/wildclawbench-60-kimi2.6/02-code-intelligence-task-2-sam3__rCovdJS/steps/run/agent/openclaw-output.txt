@@ -1,0 +1,11 @@
+[tools] exec failed: exec host=sandbox requires a sandbox runtime for this session.
+Enable sandbox mode (`agents.defaults.sandbox.mode="non-main"` or `"all"`) or use host=auto/gateway/node. raw_params={"command":{"omitted":true,"reason":"exec command may contain credentials","type":"string","chars":22,"sha256":"6a7066cb0f4f6984"},"host":"sandbox"}
+[tools] edit failed: No changes made to /tmp_workspace/test_sam3.py. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected. raw_params={"edits":[{"newText":"IMAGE_PATH = SAM3_ROOT / \"assets\" / \"images\" / \"test_image.jpg\"","oldText":"IMAGE_PATH = SAM3_ROOT / \"assets\" / \"images\" / \"test_image.jpg\""}],"path":"/tmp_workspace/test_sam3.py"}
+[provider-transport-fetch] [model-fetch] error provider=anthropic api=anthropic-messages model=kimi-k2.6 elapsedMs=77340 name=TypeError code=undefined causeName=Error causeCode=ECONNRESET message=fetch failed
+[agent/embedded] embedded run agent end: runId=bdb6bf35-b200-4bb5-bfb7-6bd223efd8b7 isError=true model=kimi-k2.6 provider=anthropic error=LLM request failed: network connection error. rawError=fetch failed
+[agent/embedded] auth profile failure state updated: runId=bdb6bf35-b200-4bb5-bfb7-6bd223efd8b7 profile=sha256:154a23a3efe6 provider=anthropic reason=timeout window=cooldown reused=false
+[agent/embedded] embedded run failover decision: runId=bdb6bf35-b200-4bb5-bfb7-6bd223efd8b7 stage=assistant decision=surface_error reason=timeout from=anthropic/kimi-k2.6 profile=sha256:154a23a3efe6 rawError=fetch failed
+[diagnostic] lane task error: lane=main durationMs=2062467 error="FailoverError: LLM request failed: network connection error."
+[diagnostic] lane task error: lane=session:agent:main:main durationMs=2062471 error="FailoverError: LLM request failed: network connection error."
+[model-fallback/decision] model fallback decision: decision=candidate_failed requested=anthropic/kimi-k2.6 candidate=anthropic/kimi-k2.6 reason=timeout next=none detail=fetch failed
+FailoverError: LLM request failed: network connection error.

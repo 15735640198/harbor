@@ -1,0 +1,131 @@
+{
+    "id": "2088125b-271b-496d-bde2-5787eb84b914",
+    "task_name": "wildclawbench/04-search-retrieval-task-11-fuzzy-repo-search",
+    "trial_name": "04-search-retrieval-task-11-fuzz__owpYCmd",
+    "trial_uri": "file:///Users/mac/projects/harbor/jobs/2026-06-06__11-24-16/04-search-retrieval-task-11-fuzz__owpYCmd",
+    "task_id": {
+        "path": "datasets/wildclawbench/04-search-retrieval-task-11-fuzzy-repo-search"
+    },
+    "source": "wildclawbench",
+    "task_checksum": "d5e65867897640ecb34760e7639ad27dc93f96492b73fc0290422d503afd2b8f",
+    "config": {
+        "task": {
+            "path": "datasets/wildclawbench/04-search-retrieval-task-11-fuzzy-repo-search",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "wildclawbench"
+        },
+        "trial_name": "04-search-retrieval-task-11-fuzz__owpYCmd",
+        "trials_dir": "jobs/2026-06-06__11-24-16",
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 5.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "openclaw",
+            "import_path": null,
+            "model_name": "anthropic/kimi-k2.6",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "version": "2026.5.27",
+                "context_window": 200000,
+                "max_tokens": 8192
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL}"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": true,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}",
+                "MODEL_NAME": "glm-5.1"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "52e6ea8e-d0d0-4bf2-9094-8bd54fba60cb"
+    },
+    "agent_info": {
+        "name": "openclaw",
+        "version": "2026.5.27",
+        "model_info": {
+            "name": "kimi-k2.6",
+            "provider": "anthropic"
+        }
+    },
+    "agent_result": null,
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0,
+            "overall_score": 0.0
+        },
+        "statistics": null
+    },
+    "exception_info": null,
+    "started_at": "2026-06-07T01:09:07.372205Z",
+    "finished_at": "2026-06-07T01:10:09.573682Z",
+    "environment_setup": {
+        "started_at": "2026-06-07T01:09:07.375232Z",
+        "finished_at": "2026-06-07T01:09:08.886492Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-06-07T01:09:08.886526Z",
+        "finished_at": "2026-06-07T01:09:11.103820Z"
+    },
+    "agent_execution": null,
+    "verifier": null,
+    "step_results": [
+        {
+            "step_name": "run",
+            "agent_result": {
+                "n_input_tokens": 6954,
+                "n_cache_tokens": 111360,
+                "n_output_tokens": 762,
+                "cost_usd": null,
+                "rollout_details": null,
+                "metadata": null
+            },
+            "verifier_result": {
+                "rewards": {
+                    "reward": 0.0,
+                    "overall_score": 0.0
+                },
+                "statistics": null
+            },
+            "exception_info": null,
+            "agent_execution": {
+                "started_at": "2026-06-07T01:09:16.185732Z",
+                "finished_at": "2026-06-07T01:10:03.077538Z"
+            },
+            "verifier": {
+                "started_at": "2026-06-07T01:10:03.204538Z",
+                "finished_at": "2026-06-07T01:10:07.988170Z"
+            }
+        }
+    ]
+}
