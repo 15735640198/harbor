@@ -1,0 +1,6 @@
+[grade_acad_homepage] No HTML files found in results directory
+[grade_acad_homepage] screenshot.png not found: /tmp_workspace/results/screenshot.png
+{
+  "reward": 0.0,
+  "overall_score": 0.0
+}

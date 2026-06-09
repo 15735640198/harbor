@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harbor Failure Attribution"
+  short_description: "Write OpenClaw job failure reports"
+  default_prompt: "Use $harbor-failure-attribution to write FAILURE_ATTRIBUTION.md for this Harbor OpenClaw job folder."
