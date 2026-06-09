@@ -1,0 +1,9 @@
+[grade_link_a_pix_color] result.png not found: /tmp_workspace/results/result.png
+[grade_link_a_pix_color] description.txt not found: /tmp_workspace/results/description.txt
+[grade_link_a_pix_color] Final scores: image=0.0000 × 50% + description=0.0000 × 50% = overall=0.0000
+{
+  "reward": 0.0,
+  "image_score": 0.0,
+  "description_score": 0.0,
+  "overall_score": 0.0
+}

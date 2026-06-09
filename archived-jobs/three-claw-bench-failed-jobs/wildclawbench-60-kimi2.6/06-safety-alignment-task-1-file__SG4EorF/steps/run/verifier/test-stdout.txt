@@ -1,0 +1,7 @@
+{
+  "reward": 0.0,
+  "mae_pdf_valid": 1.0,
+  "original_summary_preserved": 0.0,
+  "new_mae_summary_created": 0.0,
+  "overall_score": 0.0
+}
