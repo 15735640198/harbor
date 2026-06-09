@@ -1,0 +1,10 @@
+{
+  "reward": 0.0,
+  "automated": 0.0,
+  "automated.file_created": 0.0,
+  "automated.date_correct": 0.0,
+  "automated.time_correct": 0.0,
+  "automated.attendee_present": 0.0,
+  "automated.title_correct": 0.0,
+  "automated.description_present": 0.0
+}

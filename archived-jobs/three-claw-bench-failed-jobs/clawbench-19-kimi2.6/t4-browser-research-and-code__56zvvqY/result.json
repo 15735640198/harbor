@@ -1,0 +1,148 @@
+{
+    "id": "668334b6-055d-45ba-bbef-519f7a388db9",
+    "task_name": "clawbench/t4-browser-research-and-code",
+    "trial_name": "t4-browser-research-and-code__56zvvqY",
+    "trial_uri": "file:///Users/mac/projects/harbor/jobs/2026-06-04__19-54-12/t4-browser-research-and-code__56zvvqY",
+    "task_id": {
+        "path": "datasets/clawbench/t4-browser-research-and-code"
+    },
+    "source": "clawbench",
+    "task_checksum": "e938442effa4f5ac13d366797bd0cb5a38991ecb98e4bba4f670974641e06095",
+    "config": {
+        "task": {
+            "path": "datasets/clawbench/t4-browser-research-and-code",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "clawbench"
+        },
+        "trial_name": "t4-browser-research-and-code__56zvvqY",
+        "trials_dir": "jobs/2026-06-04__19-54-12",
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 5.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "openclaw",
+            "import_path": null,
+            "model_name": "anthropic/kimi-k2.6",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "version": "2026.5.27",
+                "context_window": 200000,
+                "max_tokens": 8192
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": true,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}",
+                "MODEL_NAME": "${MODEL_NAME:-glm-5.1}",
+                "JUDGE_API_FORMAT": "${JUDGE_API_FORMAT:-auto}"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "2fdc4524-fb94-4d5d-b916-cad8c20d1c18"
+    },
+    "agent_info": {
+        "name": "openclaw",
+        "version": "2026.5.27",
+        "model_info": {
+            "name": "kimi-k2.6",
+            "provider": "anthropic"
+        }
+    },
+    "agent_result": null,
+    "verifier_result": {
+        "rewards": {
+            "clawbench.run_score": 0.7524,
+            "clawbench.trajectory_score": 0.619,
+            "clawbench.total_assertions": 1.0,
+            "clawbench.judge_enabled": 1.0,
+            "clawbench.passed_assertions": 1.0,
+            "clawbench.judge_score": 1.0,
+            "clawbench.completion_score": 1.0,
+            "reward": 0.7524,
+            "clawbench.behavior_score": 0.3333,
+            "clawbench.judge_error": 0.0
+        },
+        "statistics": null
+    },
+    "exception_info": null,
+    "started_at": "2026-06-04T13:21:38.776789Z",
+    "finished_at": "2026-06-04T13:24:31.604571Z",
+    "environment_setup": {
+        "started_at": "2026-06-04T13:21:38.781095Z",
+        "finished_at": "2026-06-04T13:21:45.105130Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-06-04T13:21:45.105157Z",
+        "finished_at": "2026-06-04T13:22:42.297920Z"
+    },
+    "agent_execution": null,
+    "verifier": null,
+    "step_results": [
+        {
+            "step_name": "run",
+            "agent_result": {
+                "n_input_tokens": 4651,
+                "n_cache_tokens": 162560,
+                "n_output_tokens": 777,
+                "cost_usd": null,
+                "rollout_details": null,
+                "metadata": null
+            },
+            "verifier_result": {
+                "rewards": {
+                    "reward": 0.7524,
+                    "clawbench.run_score": 0.7524,
+                    "clawbench.completion_score": 1.0,
+                    "clawbench.trajectory_score": 0.619,
+                    "clawbench.behavior_score": 0.3333,
+                    "clawbench.judge_score": 1.0,
+                    "clawbench.judge_enabled": 1.0,
+                    "clawbench.judge_error": 0.0,
+                    "clawbench.total_assertions": 1,
+                    "clawbench.passed_assertions": 1
+                },
+                "statistics": null
+            },
+            "exception_info": null,
+            "agent_execution": {
+                "started_at": "2026-06-04T13:22:45.539625Z",
+                "finished_at": "2026-06-04T13:24:21.097213Z"
+            },
+            "verifier": {
+                "started_at": "2026-06-04T13:24:21.213254Z",
+                "finished_at": "2026-06-04T13:24:29.612801Z"
+            }
+        }
+    ]
+}

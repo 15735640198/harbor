@@ -1,0 +1,123 @@
+{
+    "id": "44220958-9975-4f22-99e6-39fe470089f3",
+    "task_name": "pinchbench/task-gws-cross-service",
+    "trial_name": "task-gws-cross-service__mYkXS7N",
+    "trial_uri": "file:///Users/mac/projects/harbor/jobs/2026-05-27__16-03-14/task-gws-cross-service__mYkXS7N",
+    "task_id": {
+        "path": "datasets/pinchbench/task-gws-cross-service"
+    },
+    "source": "pinchbench",
+    "task_checksum": "6d4df3119c47c68169c81ebac359a7b022b9a6600a485bfaf79031d4a9bb2a81",
+    "config": {
+        "task": {
+            "path": "datasets/pinchbench/task-gws-cross-service",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "pinchbench"
+        },
+        "trial_name": "task-gws-cross-service__mYkXS7N",
+        "trials_dir": "jobs/2026-05-27__16-03-14",
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 3.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "openclaw",
+            "import_path": null,
+            "model_name": "anthropic/kimi-k2.6",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "context_window": 200000,
+                "max_tokens": 8192
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL}"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": true,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}",
+                "MODEL_NAME": "glm-5.1"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "6a29732a-c34a-4f7e-85bd-ee65fb2d2604"
+    },
+    "agent_info": {
+        "name": "openclaw",
+        "version": "OpenClaw 2026.5.22 (a374c3a)",
+        "model_info": {
+            "name": "kimi-k2.6",
+            "provider": "anthropic"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 11232,
+        "n_cache_tokens": 297472,
+        "n_output_tokens": 1188,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.16999999999999998,
+            "automated": 0.2,
+            "automated.read_email": 0.0,
+            "automated.created_event": 0.0,
+            "automated.found_drive_file": 0.0,
+            "automated.shared_file": 0.0,
+            "automated.actions_summary": 1.0,
+            "llm_judge": 0.125,
+            "llm_judge.Cross-Service Coordination": 0.0,
+            "llm_judge.Task Completeness": 0.25
+        },
+        "statistics": null
+    },
+    "exception_info": null,
+    "started_at": "2026-05-27T14:18:00.429915Z",
+    "finished_at": "2026-05-27T14:21:37.450041Z",
+    "environment_setup": {
+        "started_at": "2026-05-27T14:18:00.435471Z",
+        "finished_at": "2026-05-27T14:18:12.556174Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-05-27T14:18:12.556247Z",
+        "finished_at": "2026-05-27T14:18:13.601497Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-05-27T14:18:13.601832Z",
+        "finished_at": "2026-05-27T14:20:58.071957Z"
+    },
+    "verifier": {
+        "started_at": "2026-05-27T14:20:58.220375Z",
+        "finished_at": "2026-05-27T14:21:35.317179Z"
+    },
+    "step_results": null
+}

@@ -1,0 +1,14 @@
+{
+  "reward": 0.0,
+  "products_file_exists": 0.0,
+  "schema_validity": 0.0,
+  "product_count": 0.0,
+  "price_accuracy": 0.0,
+  "post_created": 0.0,
+  "post_page_constraints": 0.0,
+  "post_product_completeness": 0.0,
+  "post_image_text_match": 0.0,
+  "post_text_accuracy": 0.0,
+  "post_visual_aesthetics": 0.0,
+  "overall_score": 0.0
+}

@@ -1,0 +1,14 @@
+{
+  "reward": 0.20816666666666667,
+  "automated": 0.3333333333333333,
+  "automated.listed_issues": 1.0,
+  "automated.viewed_prs": 1.0,
+  "automated.read_detail": 0.0,
+  "automated.commented": 0.0,
+  "automated.report_created": 0.0,
+  "automated.priorities_assigned": 0.0,
+  "llm_judge": 0.083,
+  "llm_judge.gh CLI Usage": 0.25,
+  "llm_judge.Triage Quality": 0.0,
+  "llm_judge.Comment Quality": 0.0
+}

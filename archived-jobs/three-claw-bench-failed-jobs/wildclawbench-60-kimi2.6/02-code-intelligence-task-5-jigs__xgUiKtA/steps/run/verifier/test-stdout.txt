@@ -1,0 +1,22 @@
+[grade_jigsaw_puzzle_hard] Grid: 0/25 points
+[grade_jigsaw_puzzle_hard] Transforms: count 0 ≠ 8, scoring 0 for this dimension
+[grade_jigsaw_puzzle_hard] Distractors: 2/12 points
+[grade_jigsaw_puzzle_hard] VLM assembly check attempt 1/3...
+[httpx] HTTP Request: POST https://api.openbitfun.com/chat/completions "HTTP/1.1 200 OK"
+[grade_jigsaw_puzzle_hard] VLM assembly check attempt 1 failed: 'str' object has no attribute 'choices'
+[grade_jigsaw_puzzle_hard] VLM assembly check attempt 2/3...
+[httpx] HTTP Request: POST https://api.openbitfun.com/chat/completions "HTTP/1.1 200 OK"
+[grade_jigsaw_puzzle_hard] VLM assembly check attempt 2 failed: 'str' object has no attribute 'choices'
+[grade_jigsaw_puzzle_hard] VLM assembly check attempt 3/3...
+[httpx] HTTP Request: POST https://api.openbitfun.com/chat/completions "HTTP/1.1 200 OK"
+[grade_jigsaw_puzzle_hard] VLM assembly check attempt 3 failed: 'str' object has no attribute 'choices'
+[grade_jigsaw_puzzle_hard] Score breakdown: grid=0 + transforms=0 + distractors=2 + assembly=0 = 2/50 → overall=0.0400
+{
+  "reward": 0.04,
+  "grid_points": 0.0,
+  "transforms_points": 0.0,
+  "distractors_points": 1.0,
+  "assembly_points": 0.0,
+  "total_points": 1.0,
+  "overall_score": 0.04
+}

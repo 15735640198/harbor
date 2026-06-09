@@ -1,0 +1,63 @@
+{
+  "agent:main:main": {
+    "sessionId": "e9ef27be-97f4-4e2b-8ed9-e018dcdf89e6",
+    "updatedAt": 1780574661714,
+    "sessionStartedAt": 1780574661688,
+    "skillsSnapshot": {
+      "prompt": "\n\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>browser-automation</name>\n    <description>Use when controlling web pages with the OpenClaw browser tool, especially multi-step flows, login checks, tab management, or recovery from stale refs/timeouts.</description>\n    <location>~/.openclaw/plugin-skills/browser-automation/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>canvas</name>\n    <description>Present HTML on connected OpenClaw node canvases, navigate/eval/snapshot, and debug canvas host URLs.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/canvas/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>diagram-maker</name>\n    <description>Create SVG/HTML or Excalidraw diagrams for concepts, architecture, flows, and whiteboards.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/diagram-maker/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>healthcheck</name>\n    <description>Audit/harden OpenClaw hosts: SSH, firewall, updates, exposure, backups, disk encryption, gateway security.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/healthcheck/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>meme-maker</name>\n    <description>Search meme templates, suggest formats, and generate local or hosted image memes.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/meme-maker/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>node-connect</name>\n    <description>Diagnose OpenClaw Android, iOS, or macOS node pairing, QR/setup code, route, auth, and connection failures.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/node-connect/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>node-inspect-debugger</name>\n    <description>Debug Node.js with node inspect, --inspect, breakpoints, CDP, heap, and CPU profiles.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/node-inspect-debugger/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>notion</name>\n    <description>Notion CLI/API for pages, Markdown content, data sources, files, comments, search, Workers, and raw API calls.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/notion/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>python-debugpy</name>\n    <description>Debug Python with pdb, breakpoint(), post-mortem inspection, and debugpy remote attach.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/python-debugpy/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>skill-creator</name>\n    <description>Create, edit, audit, tidy, validate, or restructure AgentSkills and SKILL.md files.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/skill-creator/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>spike</name>\n    <description>Run throwaway prototypes to validate feasibility, compare approaches, and report a verdict.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/spike/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>taskflow</name>\n    <description>Coordinate multi-step detached tasks as one durable TaskFlow job with owner context, state, waits, and child tasks.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/taskflow/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>taskflow-inbox-triage</name>\n    <description>Example TaskFlow pattern for inbox triage, intent routing, waiting on replies, and later summaries.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/taskflow-inbox-triage/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>weather</name>\n    <description>Current weather and forecasts with wttr.in via curl for locations, rain, temperature, travel planning.</description>\n    <location>~/.nvm/versions/node/v22.22.3/lib/node_modules/openclaw/skills/weather/SKILL.md</location>\n  </skill>\n</available_skills>",
+      "skills": [
+        {
+          "name": "browser-automation"
+        },
+        {
+          "name": "canvas"
+        },
+        {
+          "name": "diagram-maker"
+        },
+        {
+          "name": "healthcheck"
+        },
+        {
+          "name": "meme-maker",
+          "requiredEnv": []
+        },
+        {
+          "name": "node-connect"
+        },
+        {
+          "name": "node-inspect-debugger",
+          "requiredEnv": []
+        },
+        {
+          "name": "notion",
+          "primaryEnv": "NOTION_API_TOKEN",
+          "requiredEnv": []
+        },
+        {
+          "name": "python-debugpy",
+          "requiredEnv": []
+        },
+        {
+          "name": "skill-creator"
+        },
+        {
+          "name": "spike"
+        },
+        {
+          "name": "taskflow"
+        },
+        {
+          "name": "taskflow-inbox-triage"
+        },
+        {
+          "name": "weather",
+          "requiredEnv": []
+        }
+      ],
+      "version": 0
+    },
+    "lastInteractionAt": 1780574661696,
+    "sessionFile": "/logs/agent/openclaw-sessions/e9ef27be-97f4-4e2b-8ed9-e018dcdf89e6.jsonl"
+  }
+}

@@ -1,0 +1,5 @@
+ngram,count
+Retrieve -> Other -> Retrieve -> Generate Fix,1
+Other -> Retrieve -> Generate Fix -> Retrieve,1
+Retrieve -> Generate Fix -> Retrieve -> Retrieve,1
+Generate Fix -> Retrieve -> Retrieve -> Explain,1

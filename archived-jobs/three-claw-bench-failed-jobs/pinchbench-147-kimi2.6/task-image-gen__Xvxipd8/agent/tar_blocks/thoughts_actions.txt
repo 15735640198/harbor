@@ -1,0 +1,16 @@
+Thought at Iteration 0: I don't have access to an image generation tool. The tools available to me are for analyzing existing images (via `image`), not creating new ones.
+
+To generate an image like that, you could use:
+
+- **DALL-E 3** (via ChatGPT or OpenAI API)
+- **Midjourney** (Discord-based)
+- **Stable Diffusion** (local or hosted)
+- **Adobe Firefly**
+- **Leonardo.ai**
+
+If you have access to any of these tools, a good prompt would be:
+
+> "A friendly robot sitting in a cozy coffee shop, reading a book, warm lighting, comfortable atmosphere, detailed, digital art style"
+
+If you generate the image elsewhere and save it to the workspace, I can help you with it (analyze it, resize it, convert formats, etc.).
+Action at Iteration 0: agent_message

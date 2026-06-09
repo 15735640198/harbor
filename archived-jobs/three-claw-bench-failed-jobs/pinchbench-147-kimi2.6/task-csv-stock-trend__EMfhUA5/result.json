@@ -1,0 +1,114 @@
+{
+    "id": "3f893e1b-38a5-4d67-b7e7-7240e1f6b7f3",
+    "task_name": "pinchbench/task-csv-stock-trend",
+    "trial_name": "task-csv-stock-trend__EMfhUA5",
+    "trial_uri": "file:///Users/mac/projects/harbor/jobs/2026-05-27__16-03-14/task-csv-stock-trend__EMfhUA5",
+    "task_id": {
+        "path": "datasets/pinchbench/task-csv-stock-trend"
+    },
+    "source": "pinchbench",
+    "task_checksum": "4394153278d54675bff7b3f417ff4ed94745b015b07ff070211700b57cbb3c5e",
+    "config": {
+        "task": {
+            "path": "datasets/pinchbench/task-csv-stock-trend",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "pinchbench"
+        },
+        "trial_name": "task-csv-stock-trend__EMfhUA5",
+        "trials_dir": "jobs/2026-05-27__16-03-14",
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 3.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "openclaw",
+            "import_path": null,
+            "model_name": "anthropic/kimi-k2.6",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "context_window": 200000,
+                "max_tokens": 8192
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL}"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": true,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}",
+                "MODEL_NAME": "glm-5.1"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "6a29732a-c34a-4f7e-85bd-ee65fb2d2604"
+    },
+    "agent_info": {
+        "name": "openclaw",
+        "version": "OpenClaw 2026.5.22 (a374c3a)",
+        "model_info": {
+            "name": "kimi-k2.6",
+            "provider": "anthropic"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 5505,
+        "n_cache_tokens": 48640,
+        "n_output_tokens": 1875,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        },
+        "statistics": null
+    },
+    "exception_info": null,
+    "started_at": "2026-05-27T09:42:14.069963Z",
+    "finished_at": "2026-05-27T09:45:09.869877Z",
+    "environment_setup": {
+        "started_at": "2026-05-27T09:42:14.074380Z",
+        "finished_at": "2026-05-27T09:42:25.255897Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-05-27T09:42:25.255969Z",
+        "finished_at": "2026-05-27T09:42:26.228365Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-05-27T09:42:26.228723Z",
+        "finished_at": "2026-05-27T09:44:06.958858Z"
+    },
+    "verifier": {
+        "started_at": "2026-05-27T09:44:07.093212Z",
+        "finished_at": "2026-05-27T09:45:07.814027Z"
+    },
+    "step_results": null
+}

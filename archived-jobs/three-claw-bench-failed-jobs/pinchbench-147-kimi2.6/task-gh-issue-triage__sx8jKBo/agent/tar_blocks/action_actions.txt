@@ -1,0 +1,7 @@
+Action at Iteration 0: exec({"command": "gh issue list --repo testuser/my-project --state open --limit 50", "host": "auto"}); exec({"command": "gh pr list --repo testuser/my-project --state open --limit 50", "host": "auto"})
+Action at Iteration 1: exec({"command": "which gh || (command -v gh 2>/dev/null) || echo \"gh not found\""})
+Action at Iteration 2: exec({"command": "curl -sL https://github.com/cli/cli/releases/latest | grep -oP 'href=\"/cli/cli/releases/tag/\\K[^\"]+' | head -1 || echo \"fallback\"", "host": "auto"})
+Action at Iteration 3: exec({"command": "curl -sL https://github.com/cli/cli/releases/download/v2.92.0/gh_2.92.0_linux_arm64.tar.gz -o /tmp/gh.tar.gz && tar -xzf /tmp/gh.tar.gz -C /tmp && mv /tmp/gh_2.92.0_linux_arm64/bin/gh /usr/local/bin/gh && chmod +x /usr/local/bin/gh && gh --version", "host": "auto", "timeout": 120})
+Action at Iteration 4: process({"action": "poll", "sessionId": "salty-nudibranch", "timeout": 15000})
+Action at Iteration 5: exec({"command": "gh issue list --repo testuser/my-project --state open --limit 50", "host": "auto"}); exec({"command": "gh pr list --repo testuser/my-project --state open --limit 50", "host": "auto"})
+Action at Iteration 6: agent_message

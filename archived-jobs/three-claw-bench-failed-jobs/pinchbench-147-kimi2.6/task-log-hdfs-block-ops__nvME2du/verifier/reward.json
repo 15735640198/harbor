@@ -1,0 +1,15 @@
+{
+  "reward": 0.25,
+  "automated": 0.3,
+  "automated.output_created": 1.0,
+  "automated.block_count": 0.0,
+  "automated.operations_counted": 0.0,
+  "automated.lifecycle_traced": 0.5,
+  "automated.job_identified": 0.0,
+  "llm_judge": 0.2,
+  "llm_judge.report_created": 1.0,
+  "llm_judge.unique_block_count": 0.0,
+  "llm_judge.operation_type_counts": 0.0,
+  "llm_judge.block_lifecycle_traced": 0.0,
+  "llm_judge.associated_job_identified": 0.0
+}

@@ -1,0 +1,114 @@
+{
+    "id": "36854520-b681-4bb1-9b9d-934a827cad81",
+    "task_name": "pinchbench/task-email-triage",
+    "trial_name": "task-email-triage__fEmQAc2",
+    "trial_uri": "file:///Users/mac/projects/harbor/jobs/2026-05-27__16-03-14/task-email-triage__fEmQAc2",
+    "task_id": {
+        "path": "datasets/pinchbench/task-email-triage"
+    },
+    "source": "pinchbench",
+    "task_checksum": "fd1ec6e5878db073f066f820a80b3702c986c05c60a7f08b894d9b45cee06f9a",
+    "config": {
+        "task": {
+            "path": "datasets/pinchbench/task-email-triage",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "pinchbench"
+        },
+        "trial_name": "task-email-triage__fEmQAc2",
+        "trials_dir": "jobs/2026-05-27__16-03-14",
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 3.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "openclaw",
+            "import_path": null,
+            "model_name": "anthropic/kimi-k2.6",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "context_window": 200000,
+                "max_tokens": 8192
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL}"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": true,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}",
+                "MODEL_NAME": "glm-5.1"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "6a29732a-c34a-4f7e-85bd-ee65fb2d2604"
+    },
+    "agent_info": {
+        "name": "openclaw",
+        "version": "OpenClaw 2026.5.22 (a374c3a)",
+        "model_info": {
+            "name": "kimi-k2.6",
+            "provider": "anthropic"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 5093,
+        "n_cache_tokens": 47872,
+        "n_output_tokens": 2319,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        },
+        "statistics": null
+    },
+    "exception_info": null,
+    "started_at": "2026-05-27T11:08:55.258073Z",
+    "finished_at": "2026-05-27T11:11:20.747409Z",
+    "environment_setup": {
+        "started_at": "2026-05-27T11:08:55.262290Z",
+        "finished_at": "2026-05-27T11:09:06.575493Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-05-27T11:09:06.575575Z",
+        "finished_at": "2026-05-27T11:09:07.563815Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-05-27T11:09:07.564023Z",
+        "finished_at": "2026-05-27T11:10:30.493722Z"
+    },
+    "verifier": {
+        "started_at": "2026-05-27T11:10:30.623117Z",
+        "finished_at": "2026-05-27T11:11:18.713292Z"
+    },
+    "step_results": null
+}

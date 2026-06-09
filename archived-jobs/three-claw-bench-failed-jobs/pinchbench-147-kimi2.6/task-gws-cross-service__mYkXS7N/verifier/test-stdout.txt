@@ -1,0 +1,15 @@
+Downloading pydantic-core (1.8MiB)
+ Downloaded pydantic-core
+Installed 16 packages in 37ms
+{
+  "reward": 0.16999999999999998,
+  "automated": 0.2,
+  "automated.read_email": 0.0,
+  "automated.created_event": 0.0,
+  "automated.found_drive_file": 0.0,
+  "automated.shared_file": 0.0,
+  "automated.actions_summary": 1.0,
+  "llm_judge": 0.125,
+  "llm_judge.Cross-Service Coordination": 0.0,
+  "llm_judge.Task Completeness": 0.25
+}

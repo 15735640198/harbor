@@ -1,0 +1,12 @@
+{
+  "reward": 0.4075,
+  "clawbench.run_score": 0.4075,
+  "clawbench.completion_score": 0.0,
+  "clawbench.trajectory_score": 0.5557,
+  "clawbench.behavior_score": 1.0,
+  "clawbench.judge_score": 1.0,
+  "clawbench.judge_enabled": 1.0,
+  "clawbench.judge_error": 0.0,
+  "clawbench.total_assertions": 1,
+  "clawbench.passed_assertions": 0
+}

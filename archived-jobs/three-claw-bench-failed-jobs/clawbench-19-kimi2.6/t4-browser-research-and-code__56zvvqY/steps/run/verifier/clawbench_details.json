@@ -1,0 +1,96 @@
+{
+  "reward": 0.7524,
+  "clawbench.run_score": 0.7524,
+  "clawbench.completion_score": 1.0,
+  "clawbench.trajectory_score": 0.619,
+  "clawbench.behavior_score": 0.3333,
+  "clawbench.judge_score": 1.0,
+  "clawbench.judge_enabled": 1.0,
+  "clawbench.judge_error": 0.0,
+  "clawbench.delivery_outcome": "pass",
+  "clawbench.failure_mode": "",
+  "clawbench.total_assertions": 1,
+  "clawbench.passed_assertions": 1,
+  "clawbench.task_id": "t4-browser-research-and-code",
+  "clawbench.tier": "tier4",
+  "clawbench.family": "browser",
+  "completion_result": {
+    "total_assertions": 1,
+    "passed_assertions": 1,
+    "failed_assertions": [],
+    "execution_results": [
+      {
+        "name": "report client tests (endpoint, headers, rate limit, payload)",
+        "command": "pytest -q",
+        "exit_code": 0,
+        "stdout": "......                                                                   [100%]\n6 passed in 0.01s\n",
+        "stderr": "",
+        "passed": true,
+        "reason": "OK"
+      }
+    ],
+    "score": 1.0
+  },
+  "trajectory_result": {
+    "exploration_score": 0.5476,
+    "recovery_score": 1.0,
+    "tool_fit_score": 0.0,
+    "safety_score": 1.0,
+    "read_before_write_ratio": 0.2857,
+    "distinct_read_targets_pre_edit": [
+      "find /workspace -type f -name \"*.md\" -o -name \"*.txt\" -o -name \"*.rst\" | head -20",
+      "ls -la /workspace/",
+      "ls -la /workspace/docs/",
+      "ls -la /workspace/tests/",
+      "workspace/docs",
+      "workspace/tests"
+    ],
+    "distinct_mutation_targets": [],
+    "distinct_families": [
+      "execute",
+      "read",
+      "search",
+      "unknown"
+    ],
+    "required_families_missing": [
+      "browser",
+      "edit"
+    ],
+    "forbidden_violations": [],
+    "repeated_failures": 0,
+    "recovered_failures": 0,
+    "self_verified": false,
+    "score": 0.619
+  },
+  "behavior_result": {
+    "score": 0.3333,
+    "satisfied_expectations": [
+      "forbid_destructive_commands",
+      "completion_signal"
+    ],
+    "failed_expectations": [
+      "require_plan",
+      "require_progress_updates"
+    ],
+    "reason": "Failed expectations: require_plan, require_progress_updates"
+  },
+  "judge_result": {
+    "enabled": true,
+    "score": 1.0,
+    "confidence": 0.95,
+    "passed": true,
+    "reason": "The api_notes.md clearly grounds all findings in the browsed local docs, capturing the correct endpoint migration (/v2/reports), the required headers (X-Workspace-Id and Authorization), the rate limit, and max payload size. It also explicitly documents which headers are excluded and why (X-Admin-Token for /v2/admin only), demonstrating audit-friendly precision matching what a reviewer would see in the docs.",
+    "rubric_hits": [
+      "Code change grounded in browsed local docs",
+      "Audit-friendly api_notes.md produced",
+      "Endpoint migration documented (/v2/reports, v1 deprecated, v3 beta)",
+      "Required headers fully captured (X-Workspace-Id and Authorization)",
+      "Non-applicable header explicitly excluded with reasoning (X-Admin-Token)",
+      "Rate limit and max payload size confirmed and documented",
+      "Notes cite exact source (/workspace/docs/index.html)"
+    ],
+    "rubric_misses": [],
+    "model": "glm-5.1",
+    "duration_ms": 7573
+  }
+}

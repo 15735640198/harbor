@@ -1,0 +1,27 @@
+Downloading pydantic-core (1.8MiB)
+ Downloaded pydantic-core
+Installed 16 packages in 24ms
+Traceback (most recent call last):
+  File "/tests/llm_judge.py", line 367, in <module>
+    main()
+  File "/tests/llm_judge.py", line 337, in main
+    judge_score, judge_scores, notes = run_llm_judge(
+                                       ^^^^^^^^^^^^^^
+  File "/tests/llm_judge.py", line 318, in run_llm_judge
+    result = parse_judge_response(extract_response_text(response))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tests/llm_judge.py", line 248, in parse_judge_response
+    raise last_error
+  File "/tests/llm_judge.py", line 242, in parse_judge_response
+    payload = json.loads(candidate)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ^^^^^^^^^^^^^^^^^^^^^^
+json.decoder.JSONDecodeError: Expecting ',' delimiter: line 1 column 195 (char 194)

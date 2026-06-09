@@ -1,0 +1,4 @@
+iteration,step_id,category,action
+0,2,Other,"exec({""command"": ""date -d \""next Tuesday\"" +\""%Y-%m-%d\"" 2>/dev/null || date -v+tue +\""%Y-%m-%d\"" 2>/dev/null""})"
+1,4,Generate Fix,"write({""content"": ""BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//OpenClaw//Simulated Calendar//EN\nCALSCALE:GREGORIAN\nMETHOD:REQUEST\nBEGIN:VEVENT\nUID:project-sync-2026-06-02@openclaw.simulated\nDTSTAMP:20260527T000000Z\nDTSTART;TZID=America/New_York:20260602T150000\nDTEND;TZID=America/New_York:20260602T160000\nSUMMARY:Project Sync\nDESCRIPTION:Discussing the Q1 roadmap.\\n\\nAttendees: john@example.com\nORGANIZER;CN=OpenClaw User:mailto:user@example.com\nATTENDEE;RSVP=TRUE;CN=John Doe:mailto:john@example.com\nSTATUS:CONFIRMED\nSEQUENCE:0\nEND:VEVENT\nEND:VCALENDAR\n"", ""path"": ""/app/events/project-sync-2026-06-02.ics""})"
+2,6,Explain,agent_message

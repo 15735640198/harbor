@@ -1,0 +1,151 @@
+{
+    "id": "6f9c87a5-9f45-4368-a750-398e06ef0367",
+    "task_name": "wildclawbench/05-creative-synthesis-task-5-product-launch-video-to-json",
+    "trial_name": "05-creative-synthesis-task-5-pro__RcyswKZ",
+    "trial_uri": "file:///Users/mac/projects/harbor/jobs/2026-06-06__11-24-16/05-creative-synthesis-task-5-pro__RcyswKZ",
+    "task_id": {
+        "path": "datasets/wildclawbench/05-creative-synthesis-task-5-product-launch-video-to-json"
+    },
+    "source": "wildclawbench",
+    "task_checksum": "42be700eb64cce8c0a3a364f9eddd29ff23a2357cfa3b02e867173f3c7eb3f09",
+    "config": {
+        "task": {
+            "path": "datasets/wildclawbench/05-creative-synthesis-task-5-product-launch-video-to-json",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "wildclawbench"
+        },
+        "trial_name": "05-creative-synthesis-task-5-pro__RcyswKZ",
+        "trials_dir": "jobs/2026-06-06__11-24-16",
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 5.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "openclaw",
+            "import_path": null,
+            "model_name": "anthropic/kimi-k2.6",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "version": "2026.5.27",
+                "context_window": 200000,
+                "max_tokens": 8192
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL}"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": true,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}",
+                "MODEL_NAME": "glm-5.1"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "52e6ea8e-d0d0-4bf2-9094-8bd54fba60cb"
+    },
+    "agent_info": {
+        "name": "openclaw",
+        "version": "2026.5.27",
+        "model_info": {
+            "name": "kimi-k2.6",
+            "provider": "anthropic"
+        }
+    },
+    "agent_result": null,
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0,
+            "products_file_exists": 0.0,
+            "schema_validity": 0.0,
+            "product_count": 0.0,
+            "price_accuracy": 0.0,
+            "post_created": 0.0,
+            "post_page_constraints": 0.0,
+            "post_product_completeness": 0.0,
+            "post_image_text_match": 0.0,
+            "post_text_accuracy": 0.0,
+            "post_visual_aesthetics": 0.0,
+            "overall_score": 0.0
+        },
+        "statistics": null
+    },
+    "exception_info": null,
+    "started_at": "2026-06-06T18:50:41.780127Z",
+    "finished_at": "2026-06-06T19:20:11.521860Z",
+    "environment_setup": {
+        "started_at": "2026-06-06T18:50:42.905636Z",
+        "finished_at": "2026-06-06T18:51:38.486612Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-06-06T18:51:38.486639Z",
+        "finished_at": "2026-06-06T18:51:40.739410Z"
+    },
+    "agent_execution": null,
+    "verifier": null,
+    "step_results": [
+        {
+            "step_name": "run",
+            "agent_result": {
+                "n_input_tokens": 93374,
+                "n_cache_tokens": 9632512,
+                "n_output_tokens": 13548,
+                "cost_usd": null,
+                "rollout_details": null,
+                "metadata": null
+            },
+            "verifier_result": {
+                "rewards": {
+                    "reward": 0.0,
+                    "products_file_exists": 0.0,
+                    "schema_validity": 0.0,
+                    "product_count": 0.0,
+                    "price_accuracy": 0.0,
+                    "post_created": 0.0,
+                    "post_page_constraints": 0.0,
+                    "post_product_completeness": 0.0,
+                    "post_image_text_match": 0.0,
+                    "post_text_accuracy": 0.0,
+                    "post_visual_aesthetics": 0.0,
+                    "overall_score": 0.0
+                },
+                "statistics": null
+            },
+            "exception_info": null,
+            "agent_execution": {
+                "started_at": "2026-06-06T18:52:02.782137Z",
+                "finished_at": "2026-06-06T19:20:08.767191Z"
+            },
+            "verifier": {
+                "started_at": "2026-06-06T19:20:08.901383Z",
+                "finished_at": "2026-06-06T19:20:09.871770Z"
+            }
+        }
+    ]
+}

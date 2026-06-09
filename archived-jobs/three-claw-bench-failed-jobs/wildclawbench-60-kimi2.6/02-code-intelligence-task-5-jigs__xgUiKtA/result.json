@@ -1,0 +1,146 @@
+{
+    "id": "4da5da1d-d728-4fd4-8704-090ffe579d98",
+    "task_name": "wildclawbench/02-code-intelligence-task-5-jigsaw-puzzle-hard-zh",
+    "trial_name": "02-code-intelligence-task-5-jigs__xgUiKtA",
+    "trial_uri": "file:///Users/mac/projects/harbor/jobs/2026-06-06__11-24-16/02-code-intelligence-task-5-jigs__xgUiKtA",
+    "task_id": {
+        "path": "datasets/wildclawbench/02-code-intelligence-task-5-jigsaw-puzzle-hard-zh"
+    },
+    "source": "wildclawbench",
+    "task_checksum": "8b5b691fb89c63f47de1fcdf446c71a89d90330b7e7eac30c794a1b6454c1291",
+    "config": {
+        "task": {
+            "path": "datasets/wildclawbench/02-code-intelligence-task-5-jigsaw-puzzle-hard-zh",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "wildclawbench"
+        },
+        "trial_name": "02-code-intelligence-task-5-jigs__xgUiKtA",
+        "trials_dir": "jobs/2026-06-06__11-24-16",
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 5.0,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "openclaw",
+            "import_path": null,
+            "model_name": "anthropic/kimi-k2.6",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "version": "2026.5.27",
+                "context_window": 200000,
+                "max_tokens": 8192
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL}"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": true,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "env": {
+                "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+                "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-}",
+                "MODEL_NAME": "glm-5.1"
+            },
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "52e6ea8e-d0d0-4bf2-9094-8bd54fba60cb"
+    },
+    "agent_info": {
+        "name": "openclaw",
+        "version": "2026.5.27",
+        "model_info": {
+            "name": "kimi-k2.6",
+            "provider": "anthropic"
+        }
+    },
+    "agent_result": null,
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.04,
+            "grid_points": 0.0,
+            "transforms_points": 0.0,
+            "distractors_points": 1.0,
+            "assembly_points": 0.0,
+            "total_points": 1.0,
+            "overall_score": 0.04
+        },
+        "statistics": null
+    },
+    "exception_info": null,
+    "started_at": "2026-06-06T12:12:49.467582Z",
+    "finished_at": "2026-06-06T13:53:04.458435Z",
+    "environment_setup": {
+        "started_at": "2026-06-06T12:12:49.481702Z",
+        "finished_at": "2026-06-06T12:12:51.245959Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-06-06T12:12:51.245986Z",
+        "finished_at": "2026-06-06T12:12:53.474705Z"
+    },
+    "agent_execution": null,
+    "verifier": null,
+    "step_results": [
+        {
+            "step_name": "run",
+            "agent_result": {
+                "n_input_tokens": 369585,
+                "n_cache_tokens": 7564122,
+                "n_output_tokens": 191868,
+                "cost_usd": null,
+                "rollout_details": null,
+                "metadata": null
+            },
+            "verifier_result": {
+                "rewards": {
+                    "reward": 0.04,
+                    "grid_points": 0.0,
+                    "transforms_points": 0.0,
+                    "distractors_points": 1.0,
+                    "assembly_points": 0.0,
+                    "total_points": 1.0,
+                    "overall_score": 0.04
+                },
+                "statistics": null
+            },
+            "exception_info": {
+                "exception_type": "TimeoutError",
+                "exception_message": "",
+                "exception_traceback": "Traceback (most recent call last):\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/tasks.py\", line 507, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/Users/mac/projects/harbor/src/harbor/agents/installed/base.py\", line 42, in wrapper\n    return await fn(self, instruction, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/mac/projects/harbor/src/harbor/agents/installed/openclaw.py\", line 200, in run\n    await self.exec_as_agent(\n    ...<5 lines>...\n    )\n  File \"/Users/mac/projects/harbor/src/harbor/agents/installed/base.py\", line 366, in exec_as_agent\n    return await self._exec(\n           ^^^^^^^^^^^^^^^^^\n        environment, command, env=env, cwd=cwd, timeout_sec=timeout_sec\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/mac/projects/harbor/src/harbor/agents/installed/base.py\", line 313, in _exec\n    result = await environment.exec(\n             ^^^^^^^^^^^^^^^^^^^^^^^\n    ...<5 lines>...\n    )\n    ^\n  File \"/Users/mac/projects/harbor/src/harbor/environments/docker/docker.py\", line 599, in exec\n    return await self._run_docker_compose_command(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        exec_command, check=False, timeout_sec=timeout_sec\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/mac/projects/harbor/src/harbor/environments/docker/docker.py\", line 360, in _run_docker_compose_command\n    stdout_bytes, stderr_bytes = await process.communicate()\n                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/subprocess.py\", line 201, in communicate\n    stdin, stdout, stderr = await tasks.gather(stdin, stdout, stderr)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/subprocess.py\", line 181, in _read_stream\n    output = await stream.read()\n             ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/streams.py\", line 723, in read\n    block = await self.read(self._limit)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/streams.py\", line 730, in read\n    await self._wait_for_data('read')\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/streams.py\", line 539, in _wait_for_data\n    await self._waiter\nasyncio.exceptions.CancelledError\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/Users/mac/projects/harbor/src/harbor/trial/trial.py\", line 566, in _execute_step_agent\n    await asyncio.wait_for(\n    ...<6 lines>...\n    )\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/tasks.py\", line 506, in wait_for\n    async with timeouts.timeout(timeout):\n               ~~~~~~~~~~~~~~~~^^^^^^^^^\n  File \"/Users/mac/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py\", line 116, in __aexit__\n    raise TimeoutError from exc_val\nTimeoutError\n",
+                "occurred_at": "2026-06-06T21:52:56.589854"
+            },
+            "agent_execution": {
+                "started_at": "2026-06-06T12:12:56.624072Z",
+                "finished_at": "2026-06-06T13:52:56.589913Z"
+            },
+            "verifier": {
+                "started_at": "2026-06-06T13:52:56.745048Z",
+                "finished_at": "2026-06-06T13:53:02.857470Z"
+            }
+        }
+    ]
+}

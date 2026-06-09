@@ -1,0 +1,109 @@
+{
+  "reward": 0.6405,
+  "clawbench.run_score": 0.6405,
+  "clawbench.completion_score": 0.6667,
+  "clawbench.trajectory_score": 0.5327,
+  "clawbench.behavior_score": 0.75,
+  "clawbench.judge_score": 0.4,
+  "clawbench.judge_enabled": 1.0,
+  "clawbench.judge_error": 0.0,
+  "clawbench.delivery_outcome": "partial",
+  "clawbench.failure_mode": "verification_skipped",
+  "clawbench.total_assertions": 3,
+  "clawbench.passed_assertions": 2,
+  "clawbench.task_id": "t4-life-trip-plan",
+  "clawbench.tier": "tier4",
+  "clawbench.family": "tools",
+  "completion_result": {
+    "total_assertions": 3,
+    "passed_assertions": 2,
+    "failed_assertions": [
+      "EXEC no fabricated places (every named venue is in places.json): Exit code 1 != expected 0"
+    ],
+    "execution_results": [
+      {
+        "name": "no fabricated places (every named venue is in places.json)",
+        "command": "python3 verify_no_fab_places.py",
+        "exit_code": 1,
+        "stdout": "FAIL: no itinerary mentioning Fushimi Inari found anywhere\n",
+        "stderr": "",
+        "passed": false,
+        "reason": "Exit code 1 != expected 0"
+      },
+      {
+        "name": "Fushimi Inari included as required landmark",
+        "command": "python3 verify_landmark_present.py",
+        "exit_code": 0,
+        "stdout": "PASS: t4_life_trip_plan/verify_landmark_present.py\n",
+        "stderr": "",
+        "passed": true,
+        "reason": "OK"
+      },
+      {
+        "name": "dietary constraints honored",
+        "command": "python3 verify_constraints_check.py",
+        "exit_code": 0,
+        "stdout": "PASS: dietary constraint honored\n",
+        "stderr": "",
+        "passed": true,
+        "reason": "OK"
+      }
+    ],
+    "score": 0.6667
+  },
+  "trajectory_result": {
+    "exploration_score": 0.3317,
+    "recovery_score": 1.0,
+    "tool_fit_score": 0.0,
+    "safety_score": 1.0,
+    "read_before_write_ratio": 0.0769,
+    "distinct_read_targets_pre_edit": [
+      "dev/null",
+      "find /workspace -type f -name \"*.md\" -o -name \"*.json\" -o -name \"*.txt\" 2>/dev/null | head -50"
+    ],
+    "distinct_mutation_targets": [],
+    "distinct_families": [
+      "search",
+      "unknown"
+    ],
+    "required_families_missing": [
+      "edit",
+      "read"
+    ],
+    "forbidden_violations": [],
+    "repeated_failures": 0,
+    "recovered_failures": 0,
+    "self_verified": false,
+    "score": 0.5327
+  },
+  "behavior_result": {
+    "score": 0.75,
+    "satisfied_expectations": [
+      "require_progress_updates",
+      "require_blocker_explanation",
+      "forbid_destructive_commands"
+    ],
+    "failed_expectations": [
+      "require_plan"
+    ],
+    "reason": "Failed expectations: require_plan"
+  },
+  "judge_result": {
+    "enabled": true,
+    "score": 0.4,
+    "confidence": 0.8,
+    "passed": false,
+    "reason": "The agent attempted the trip planning task and produced output that passed 2 of 3 completion assertions, but critically failed the 'no fabricated places' check — meaning it included venues not found in places.json. The rubric explicitly penalizes hallucinated content. The agent also struggled significantly with tool usage (repeated ENOENT errors, unavailable memory search due to missing API key), suggesting it may not have properly read the user's profile to respect budget/mobility constraints. The result is partially wrong and unreliable for actual use due to fabricated venues.",
+    "rubric_hits": [
+      "attempted the task and produced on-topic output",
+      "passed some completion assertions (2/3)"
+    ],
+    "rubric_misses": [
+      "fabricated places not in places.json",
+      "struggled with tool access (file reads, memory search unavailable)",
+      "likely did not properly incorporate user profile constraints"
+    ],
+    "model": "glm-5.1",
+    "duration_ms": 28285
+  }
+}
