@@ -13,9 +13,6 @@ ideas:
 
 tasks
 - 10 high-quality 0-1 generation
-- all high-quality openclaw bench tasks
-
-- integrate clawbench project and analyze it
 
 - xiaoyi trace analysis POC
     - critical failure

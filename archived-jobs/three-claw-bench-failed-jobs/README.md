@@ -1,8 +1,9 @@
 # Three Claw Bench Failed Jobs
 
-This archive contains 33 selected low-score or failed OpenClaw trials copied from:
+This archive contains 36 selected low-score or failed OpenClaw trials copied from:
 
 - `jobs/clawbench-19-kimi2.6`
+- `jobs/clawbench-19-kimi2.6-2`
 - `jobs/pinchbench-147-kimi2.6`
 - `jobs/wildclawbench-60-kimi2.6`
 
@@ -16,6 +17,9 @@ Selection goal: cover distinct failure families for later failure-attribution an
 | `clawbench-19-kimi2.6` | `t3-data-pipeline-report__25HCHpE` | 0.4075 | Artifact/report failure; no assertions passed and completion score was 0.0. |
 | `clawbench-19-kimi2.6` | `t4-life-trip-plan__pk7EZC6` | 0.6405 | Multi-constraint planning partial failure with low judge, completion, and behavior scores. |
 | `clawbench-19-kimi2.6` | `t4-browser-research-and-code__56zvvqY` | 0.7524 | Browser plus code partial failure with low behavior score. |
+| `clawbench-19-kimi2.6-2` | `t4-delegation-repair__x8HNRDi` | 0.2296 | First-turn provider failure; OpenClaw hit an upstream LLM API error before any read/edit/delegate/test actions, leaving both bugs unfixed. |
+| `clawbench-19-kimi2.6-2` | `t2-add-tests-normalizer__BPeAoa2` | 0.5556 | Test-authoring path miss; wrote and verified `/workspace/test_normalizer.py` but verifier required `tests/test_normalizer.py`. |
+| `clawbench-19-kimi2.6-2` | `t4-life-trip-plan__AjimJm5` | 0.763 | Trip-planning fixture discovery miss; searched generic memory files, missed local `profile.yaml`/`places.json`, and asked for details instead of producing an itinerary. |
 | `pinchbench-147-kimi2.6` | `task-calendar__8A83BnJ` | 0.0 | Calendar/tool output hard zero; event file/date/time/attendee/title/description all missing. |
 | `pinchbench-147-kimi2.6` | `task-email-triage__fEmQAc2` | 0.0 | Communication workflow hard zero. |
 | `pinchbench-147-kimi2.6` | `task-csv-stock-trend__EMfhUA5` | 0.0 | CSV/data analysis hard zero. |

@@ -1,0 +1,71 @@
+{
+  "schema_version": "ATIF-v1.7",
+  "session_id": "t4-delegation-repair__x8HNRDi",
+  "trajectory_id": "t4-delegation-repair__x8HNRDi:multi-step",
+  "agent": {
+    "name": "openclaw",
+    "version": "2026.5.27",
+    "model_name": "anthropic/kimi-k2.6",
+    "extra": {
+      "openclaw_session_id": "01633714-6102-42bb-a2b6-c6a2fff3bfe0"
+    }
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "timestamp": "2026-06-09T13:14:27.087000Z",
+      "source": "user",
+      "message": "Complete this ClawBench task in the current workspace.\nUse the available tools to inspect, edit, and verify your work before finishing.\n\nThere are two independent bugs in `billing.py` and `notifications.py`. Use a subagent/helper to investigate or patch at least one of those files, but make sure the final fixes are present in this main workspace before you finish. Then rerun `pytest -q`.\n\nFollow-up instruction 2: Reminder: a helper investigation alone is not enough. Confirm both files are fixed in the current workspace and run the test suite before wrapping up.\nOriginal ClawBench condition: after_assistant_turns=1.",
+      "extra": {
+        "openclaw_role": "user",
+        "stop_reason": null,
+        "tool_call_id": null,
+        "harbor_step_name": "run",
+        "harbor_original_step_id": 1
+      }
+    },
+    {
+      "step_id": 2,
+      "timestamp": "2026-06-09T13:14:27.096000Z",
+      "source": "agent",
+      "model_name": "kimi-k2.6",
+      "message": "",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cached_tokens": 0,
+        "cost_usd": 0.0,
+        "extra": {
+          "cache_creation_tokens": 0,
+          "total_tokens": 0
+        }
+      },
+      "llm_call_count": 1,
+      "extra": {
+        "openclaw_role": "assistant",
+        "stop_reason": "error",
+        "tool_call_id": null,
+        "harbor_step_name": "run",
+        "harbor_original_step_id": 2
+      }
+    }
+  ],
+  "notes": "Aggregated from per-step trajectories.",
+  "final_metrics": {
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_cached_tokens": 0,
+    "total_steps": 2
+  },
+  "extra": {
+    "harbor_multi_step": true,
+    "source": "multi_step_aggregate",
+    "step_trajectories": [
+      {
+        "step_name": "run",
+        "path": "steps/run/agent/trajectory.json",
+        "steps": 2
+      }
+    ]
+  }
+}
