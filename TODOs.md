@@ -26,3 +26,7 @@ tasks
     - add other methodolgies for failure attribution (tool call failure, skill related failure like load skill too many times or too late)(agentic trace analysis, skill-based)
     - think what xiaoyi-specific failure pattern would be
     - design trace analysis interface
+
+- meta-analysis of batch jobs
+
+- the AITF may not be a good format to feed trajectory to LLM for analysis
