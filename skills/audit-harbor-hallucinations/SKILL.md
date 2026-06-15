@@ -90,7 +90,7 @@ Field rules:
 After writing the file, validate the output:
 
 ```bash
-python .codex/skills/audit-harbor-hallucinations/scripts/validate_result.py <path-to-result.json>
+python .claude/skills/audit-harbor-hallucinations/scripts/validate_result.py <path-to-result.json>
 ```
 
 If validation fails, fix `result.json` and run the validator again.
