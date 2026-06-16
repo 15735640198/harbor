@@ -1,5 +1,5 @@
 jobs_dir: jobs
-n_attempts: 10
+n_attempts: 5
 timeout_multiplier: 1.0
 agent_timeout_multiplier: 5.0
 orchestrator:
@@ -18,13 +18,13 @@ verifier:
     JUDGE_API_FORMAT: ${JUDGE_API_FORMAT:-auto}
 agents:
   - name: openclaw
-    model_name: anthropic/kimi-k2.6
+    model_name: openai/MiniMax-M2.7-highspeed
     kwargs:
       version: "2026.5.27"
       context_window: 200000
       max_tokens: 8192
     env:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      OPENAI_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_BASE_URL: ${ANTHROPIC_BASE_URL}
 datasets:
   - path: datasets/clawbench
