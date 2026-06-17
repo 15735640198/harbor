@@ -1,21 +1,23 @@
-import base64
-from dataclasses import dataclass
-import json
-import os
-import shlex
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Literal
+"""OpenClaw installed agent (Harbor integration)."""
 
-from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
+import copy
+import inspect
+import json
+import shlex
+from pathlib import Path
+from typing import Any, override
+
+from harbor.agents.installed.base import (
+    BaseInstalledAgent,
+    CliFlag,
+    with_prompt_template,
+)
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.agent.name import AgentName
 from harbor.models.trajectories import (
     Agent,
-    ContentPart,
     FinalMetrics,
-    ImageSource,
     Metrics,
     Observation,
     ObservationResult,
@@ -23,169 +25,858 @@ from harbor.models.trajectories import (
     ToolCall,
     Trajectory,
 )
-from harbor.utils.templating import render_setup_script
+from harbor.utils.trajectory_utils import format_trajectory_json
+
+OPENCLAW_AGENT_SETUP_TIMEOUT_SEC = 1200.0
 
 
-ImageMediaType = Literal["image/jpeg", "image/png", "image/gif", "image/webp"]
+def openclaw_session_jsonl_to_atif_steps(
+    path: Path | str,
+    *,
+    instruction: str,
+    model_name: str,
+) -> list[Step] | None:
+    """Map "openclaw.session.jsonl" message lines to ATIF "Step" objects (optional).
+
+    Call this when you want a multi-step view instead of the summarized OpenClaw CLI
+    JSON envelope. Returns "None" if the file is missing, unreadable, or has no
+    usable "type: message" rows. Does not validate against the full ATIF schema beyond
+    "Step" construction.
+    """
+    path = Path(path)
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+
+    def _text_from_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return ""
+        return "".join(
+            p["text"]
+            for p in content
+            if isinstance(p, dict)
+            and p.get("type") == "text"
+            and isinstance(p.get("text"), str)
+        )
+
+    def _assistant_parts(content: Any) -> tuple[str, list[ToolCall]]:
+        if not isinstance(content, list):
+            return "", []
+        texts: list[str] = []
+        tools: list[ToolCall] = []
+        for p in content:
+            if not isinstance(p, dict):
+                continue
+            if p.get("type") == "text" and isinstance(p.get("text"), str):
+                texts.append(p["text"])
+            elif p.get("type") == "toolCall" and isinstance(p.get("name"), str):
+                raw = p.get("arguments", "")
+                if isinstance(raw, str):
+                    try:
+                        args: dict[str, Any] = json.loads(raw) if raw.strip() else {}
+                    except json.JSONDecodeError:
+                        args = {"raw": raw}
+                elif isinstance(raw, dict):
+                    args = raw
+                else:
+                    args = {}
+                cid = p.get("id")
+                tools.append(
+                    ToolCall(
+                        tool_call_id=str(cid) if cid is not None else "",
+                        function_name=p["name"],
+                        arguments=args,
+                    )
+                )
+        return "".join(texts), tools
+
+    def _usage_metrics(usage: Any) -> Metrics | None:
+        if not isinstance(usage, dict):
+            return None
+        inp = int(usage.get("input") or 0)
+        out = int(usage.get("output") or 0)
+        cr = int(usage.get("cacheRead") or 0)
+        cw = int(usage.get("cacheWrite") or 0)
+        if not (inp or out or cr):
+            return None
+        return Metrics(
+            prompt_tokens=inp + cr or None,
+            completion_tokens=out or None,
+            cached_tokens=cr or None,
+            extra=({"cache_write_tokens": cw} if cw else None),
+        )
+
+    rows: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") != "message":
+            continue
+        inner = rec.get("message")
+        if not isinstance(inner, dict):
+            continue
+        role = inner.get("role")
+        if role in ("user", "assistant", "toolResult"):
+            rows.append((rec, inner))
+
+    if not rows:
+        return None
+
+    steps: list[Step] = []
+    sid = 0
+    first_user = True
+    i = 0
+    while i < len(rows):
+        rec, msg = rows[i]
+        ts = rec.get("timestamp") if isinstance(rec.get("timestamp"), str) else None
+        role = msg.get("role")
+
+        if role == "user":
+            body = _text_from_content(msg.get("content"))
+            user_msg = (
+                instruction.strip() if (first_user and instruction.strip()) else body
+            )
+            first_user = False
+            sid += 1
+            steps.append(
+                Step(
+                    step_id=sid,
+                    source="user",
+                    message=user_msg or "(empty user message)",
+                    timestamp=ts,
+                )
+            )
+            i += 1
+            continue
+
+        if role == "assistant":
+            text, tools = _assistant_parts(msg.get("content"))
+            err = msg.get("errorMessage")
+            if text.strip():
+                agent_msg = text.strip()
+            elif isinstance(err, str) and err.strip():
+                agent_msg = f"(error) {err.strip()}"
+            else:
+                agent_msg = "(no assistant text)"
+
+            j = i + 1
+            pending = {t.tool_call_id for t in tools if t.tool_call_id}
+            ob: list[ObservationResult] = []
+            while j < len(rows) and rows[j][1].get("role") == "toolResult":
+                tr = rows[j][1]
+                cid = str(tr.get("toolCallId") or "")
+                if cid not in pending:
+                    break
+                details = tr.get("details")
+                body_t = ""
+                if isinstance(details, dict):
+                    agg = details.get("aggregated")
+                    if isinstance(agg, str) and agg.strip():
+                        body_t = agg
+                if not body_t:
+                    body_t = _text_from_content(tr.get("content"))
+                ob.append(
+                    ObservationResult(
+                        source_call_id=cid or None, content=body_t or None
+                    )
+                )
+                pending.discard(cid)
+                j += 1
+                if not pending:
+                    break
+
+            sid += 1
+            steps.append(
+                Step(
+                    step_id=sid,
+                    source="agent",
+                    message=agent_msg,
+                    timestamp=ts,
+                    model_name=model_name,
+                    tool_calls=tools or None,
+                    observation=Observation(results=ob) if ob else None,
+                    metrics=_usage_metrics(msg.get("usage")),
+                )
+            )
+            i = j
+            continue
+
+        i += 1
+
+    if len(steps) < 2:
+        return None
+    return steps
 
 
-@dataclass
-class _RunCommand:
-    command: str
-    env: dict[str, str] | None = None
-    cwd: str | None = None
-    timeout_sec: int | None = None
+def _openclaw_decode_last_json_dict_suffix(raw: str):
+    """Parse the last top-level JSON object in *raw* when it consumes the rest of the string.
+
+    Host-side helper for parsing openclaw.txt's last JSON object.
+    """
+    text = raw.strip()
+    if not text:
+        return None
+    dec = json.JSONDecoder()
+    for start in range(len(text) - 1, -1, -1):
+        if text[start] != "{":
+            continue
+        try:
+            obj, consumed = dec.raw_decode(text[start:])
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if text[start + consumed :].strip():
+            continue
+        return obj
+    return None
+
+
+def _openclaw_container_copy_session_transcript() -> None:
+    """
+    Stdlib-only logic run inside the agent container ("python3 -c").
+    Serialized via "inspect.getsource" as a **single** self-contained function.
+    Parse "openclaw.txt" by finding the last JSON object that consumes the file suffix,
+    then copy "agentMeta.sessionFile".
+    """
+    import json
+    import shutil
+    import sys
+    from pathlib import Path
+
+    log_path = Path("/logs/agent/openclaw.txt")
+    if not log_path.is_file():
+        sys.exit(0)
+    raw = log_path.read_text(encoding="utf-8", errors="replace")
+    text = raw.strip()
+    if not text:
+        sys.exit(0)
+    dec = json.JSONDecoder()
+    envelope = None
+    for start in range(len(text) - 1, -1, -1):
+        if text[start] != "{":
+            continue
+        try:
+            obj, consumed = dec.raw_decode(text[start:])
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if text[start + consumed :].strip():
+            continue
+        envelope = obj
+        break
+    if not envelope:
+        sys.exit(0)
+    meta = envelope.get("meta")
+    if not isinstance(meta, dict):
+        sys.exit(0)
+    agent_meta = meta.get("agentMeta")
+    if not isinstance(agent_meta, dict):
+        sys.exit(0)
+    session_file = agent_meta.get("sessionFile")
+    if not isinstance(session_file, str) or not session_file.strip():
+        sys.exit(0)
+    src = Path(session_file)
+    if not src.is_file():
+        sys.exit(0)
+    dst = Path("/logs/agent") / "openclaw.session.jsonl"
+    shutil.copy2(src, dst)
+
+
+def _nvm22(cmd: str) -> str:
+    return f". ~/.nvm/nvm.sh && nvm use 22 && {cmd}"
 
 
 class OpenClaw(BaseInstalledAgent):
     """
-    The OpenClaw agent installs the OpenClaw CLI tool and uses it to solve tasks
-    in local embedded mode (--local).
+    OpenClaw in Harbor: "openclaw agent --local --json" (stdout is one JSON object).
+
+    Host writes merged config as "openclaw.upload.json"; after "openclaw setup" it is
+    copied to "~/.openclaw/openclaw.json". Session JSONL is copied to
+    "/logs/agent/openclaw.session.jsonl" when available.
+
+    Supported providers (see :attr:`_SUPPORTED_PROVIDERS`): ``anthropic``,
+    ``nvidia``, ``openai``. All three use the OpenAI-compatible chat API
+    and follow the ``<PROVIDER>_API_KEY`` / ``<PROVIDER>_BASE_URL`` env-var
+    convention, so for a "<provider>/<model>" selection
+    (e.g. "openai/gpt-4.1"):
+
+    * "<PROVIDER>_API_KEY" and "<PROVIDER>_BASE_URL" are forwarded into the
+      container when set.
+    * "<PROVIDER>_BASE_URL" is merged into
+      "models.providers.<provider>.baseUrl" when not already configured.
+    * The OpenClaw "models" array under the matching provider is populated
+      from "--model" when missing.
+
+    Headless runs append "message" to "tools.deny". To add a provider,
+    subclass and extend :attr:`_SUPPORTED_PROVIDERS` (and override
+    :meth:`_provider_env_keys` if its env scheme differs from the
+    convention).
+
+    "session_to_trajectory": when true (default), prefers "openclaw.session.jsonl" for tragectory generation
+    otherwise the summarized CLI envelope is used.
+
+    "failover_retries": optional non-negative int merged into
+    "auth.cooldowns.rateLimitedProfileRotations" in the uploaded OpenClaw config.
+
+    https://github.com/openclaw/openclaw - Node 22.16+ or 24.
     """
 
-    SUPPORTS_ATIF: bool = True  # ATIF support via session JSONL parsing
+    SUPPORTS_ATIF: bool = True
+
+    # Host-written full config; trial mounts logs here as /logs/agent - copied into ~/.openclaw/
+    _UPLOAD_CONFIG_FILENAME = "openclaw.upload.json"
+    _CONTAINER_LOGS_AGENT = "/logs/agent"
+
+    # Minimal shape matching "openclaw setup --workspace ." (see OpenClaw setupCommand).
+    _SETUP_BASELINE: dict[str, Any] = {
+        "agents": {"defaults": {"workspace": "."}},
+        "gateway": {"mode": "local"},
+    }
+
+    CLI_FLAGS = [
+        # OpenClaw's embedded CLI requires a session target; default install uses agent "main".
+        CliFlag("openclaw_agent_id", cli="--agent", type="str", default="main"),
+        CliFlag("thinking", cli="--thinking", type="str", default="high"),
+        CliFlag("timeout", cli="--timeout", type="int"),
+    ]
+
+    _DEFAULT_CONFIG: dict[str, Any] = {}
+
+    # OpenClaw tool ids to deny in Harbor (no messaging channel in "--local" runs).
+    _HEADLESS_TOOL_DENY: tuple[str, ...] = ("message",)
+
+    # Providers supported out of the box. Each must follow the
+    # ``<PROVIDER>_API_KEY`` / ``<PROVIDER>_BASE_URL`` env-var convention.
+    # Subclass and override to add more (and override :meth:`_provider_env_keys`
+    # if a new provider's env scheme deviates from the convention).
+    _SUPPORTED_PROVIDERS: frozenset[str] = frozenset({"anthropic", "nvidia", "openai"})
+
+    @classmethod
+    def _provider_env_keys(cls, provider: str) -> tuple[str, ...]:
+        """Return the env vars to forward for ``provider``.
+
+        Default convention is ``<PROVIDER>_API_KEY`` and ``<PROVIDER>_BASE_URL``
+        (with ``-`` replaced by ``_``). Override in a subclass for providers
+        whose env scheme differs (e.g. AWS Bedrock, Azure, Google Vertex).
+        """
+        prefix = cls._provider_env_prefix(provider)
+        return (f"{prefix}_API_KEY", f"{prefix}_BASE_URL")
+
+    @classmethod
+    def _validate_provider(cls, provider: str) -> None:
+        """Raise ``ValueError`` if ``provider`` isn't in :attr:`_SUPPORTED_PROVIDERS`."""
+        if provider not in cls._SUPPORTED_PROVIDERS:
+            raise ValueError(
+                f"Unsupported provider {provider!r}. Supported providers: "
+                f"{sorted(cls._SUPPORTED_PROVIDERS)}. Subclass OpenClaw and "
+                "extend `_SUPPORTED_PROVIDERS` to add more."
+            )
 
     def __init__(
         self,
-        version: str | None = None,
-        context_window: int | None = None,
-        max_tokens: int | None = None,
-        temperature: float | None = None,
-        thinking: str | None = None,
-        model_params: dict[str, Any] | None = None,
         *args,
+        openclaw_config: dict[str, Any] | None = None,
         **kwargs,
     ):
-        """
-        Initialize OpenClaw agent.
-
-        Args:
-            version: OpenClaw version to install (None = latest)
-            context_window: Model context window size (required for non-standard providers)
-            max_tokens: Model max output tokens (optional, OpenClaw defaults to min(8192, context_window))
-            temperature: Sampling temperature (optional, overrides model_params)
-            thinking: Thinking level override (off, minimal, low, medium, high, xhigh)
-            model_params: Optional LLM params dict (e.g., cacheRetention, anthropicBeta).
-                Top-level kwargs (max_tokens, temperature) override matching dict keys.
-        """
-        super().__init__(*args, **kwargs)
-        self._version = version
-        self.model_params = model_params or {}
-        self.thinking = thinking
-        self.context_window = (
-            int(context_window) if context_window is not None else None
+        override_setup_timeout_sec = kwargs.pop("override_setup_timeout_sec", None)
+        self._use_openclaw_session_jsonl_for_steps = bool(
+            kwargs.pop("session_to_trajectory", True)
         )
-        self.max_tokens = int(max_tokens) if max_tokens is not None else None
-        self.temperature = float(temperature) if temperature is not None else None
-        self._post_run_completed = False
-
-        # Top-level kwargs always override dict values
-        if self.temperature is not None:
-            self.model_params["temperature"] = self.temperature
-        if self.max_tokens is not None:
-            self.model_params["maxTokens"] = self.max_tokens
+        raw_fr = kwargs.pop("failover_retries", None)
+        self._failover_retries: int | None = None
+        if raw_fr is not None:
+            self._failover_retries = int(raw_fr)
+            if self._failover_retries < 0:
+                raise ValueError("failover_retries must be non-negative")
+        self._install_exec_timeout_sec = int(
+            override_setup_timeout_sec or OPENCLAW_AGENT_SETUP_TIMEOUT_SEC
+        )
+        super().__init__(*args, **kwargs)
+        self._openclaw_config: dict[str, Any] = openclaw_config or {}
 
     @staticmethod
+    def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+        for key, value in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                OpenClaw._deep_merge(base[key], value)
+            else:
+                base[key] = value
+        return base
+
+    @classmethod
+    def _merge_harbor_headless_tool_denies(cls, cfg: dict[str, Any]) -> None:
+        """Append Harbor headless denies to "tools.deny" without dropping user entries."""
+        raw_tools = cfg.get("tools")
+        if not isinstance(raw_tools, dict):
+            cfg["tools"] = {"deny": list(cls._HEADLESS_TOOL_DENY)}
+            return
+        deny = raw_tools.get("deny")
+        if deny is None:
+            raw_tools["deny"] = list(cls._HEADLESS_TOOL_DENY)
+            return
+        if not isinstance(deny, list):
+            raw_tools["deny"] = list(cls._HEADLESS_TOOL_DENY)
+            return
+        seen: set[str] = set()
+        merged: list[str] = []
+        for item in deny:
+            if isinstance(item, str) and item not in seen:
+                seen.add(item)
+                merged.append(item)
+        for name in cls._HEADLESS_TOOL_DENY:
+            if name not in seen:
+                seen.add(name)
+                merged.append(name)
+        raw_tools["deny"] = merged
+
+    @staticmethod
+    def _shell_copy_openclaw_session_to_logs() -> str:
+        """Container command: parse "openclaw.txt" JSON, copy "agentMeta.sessionFile" to logs."""
+        body = inspect.getsource(_openclaw_container_copy_session_transcript)
+        script = body + "\n_openclaw_container_copy_session_transcript()\n"
+        return "python3 -c " + shlex.quote(script)
+
+    async def _copy_openclaw_session_file_to_agent_logs(
+        self, environment: BaseEnvironment, env: dict[str, str]
+    ) -> None:
+        """Copy OpenClaw session JSONL into the trial agent logs mount (best-effort)."""
+        try:
+            await self.exec_as_agent(
+                environment,
+                command=self._shell_copy_openclaw_session_to_logs(),
+                env=env,
+            )
+        except Exception:
+            self.logger.debug(
+                "Could not copy OpenClaw session file to "
+                f"{self._CONTAINER_LOGS_AGENT}/openclaw.session.jsonl (non-fatal)",
+                exc_info=True,
+            )
+
+    @staticmethod
+    @override
     def name() -> str:
         return AgentName.OPENCLAW.value
 
-    def version(self) -> str | None:
-        """Return the OpenClaw version being used, or None for latest."""
-        return self._version
-
+    @override
     def get_version_command(self) -> str | None:
-        return ". ~/.nvm/nvm.sh; openclaw --version"
+        return _nvm22("openclaw --version")
 
-    @property
-    def _install_agent_template_path(self) -> Path:
-        return Path(__file__).parent / "install-openclaw.sh.j2"
-
-    @property
-    def _template_variables(self) -> dict:
-        """Provide version and workspace template contents to install script."""
-        variables = {"version": self._version}
-
-        # Read workspace template files, base64-encode, and pass as Jinja variables.
-        # Base64 avoids shell quoting issues (single quotes, backticks, etc.)
-        # and preserves exact file content including trailing newlines.
-        # NOTE: These are OpenClaw's original workspace prompts (AGENTS.md, SOUL.md, etc.),
-        # intentionally kept unmodified so we benchmark the agent with its stock configuration.
-        workspace_dir = Path(__file__).parent / "openclaw"
-        if workspace_dir.is_dir():
-            for md_file in sorted(workspace_dir.glob("*.md")):
-                # AGENTS.md -> agents_md_b64, SOUL.md -> soul_md_b64, etc.
-                var_name = md_file.stem.lower().replace("-", "_") + "_md_b64"
-                variables[var_name] = base64.b64encode(md_file.read_bytes()).decode(
-                    "ascii"
-                )
-
-        return variables
-
-    def _cached_openclaw_probe_command(self) -> str:
-        return """
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-if command -v openclaw >/dev/null 2>&1; then
-    openclaw --version
-else
-    exit 127
-fi
-""".strip()
-
-    def _cached_openclaw_version_is_usable(self, stdout: str | None) -> bool:
-        lines = (stdout or "").strip().splitlines()
-        if not lines:
-            return False
-        installed_version = lines[-1].strip()
-        if self._version is None:
-            return bool(installed_version)
-        return self._version in installed_version
-
-    async def _has_usable_cached_openclaw(self, environment: BaseEnvironment) -> bool:
-        try:
-            result = await self.exec_as_agent(
-                environment,
-                command=self._cached_openclaw_probe_command(),
-                timeout_sec=30,
-            )
-        except Exception:
-            return False
-
-        return self._cached_openclaw_version_is_usable(result.stdout)
-
+    @override
     async def install(self, environment: BaseEnvironment) -> None:
-        cached_openclaw = await self._has_usable_cached_openclaw(environment)
-        if not cached_openclaw:
-            missing_packages = await environment.exec(
-                command=(
-                    "missing=''; "
-                    'command -v curl >/dev/null 2>&1 || missing="$missing curl"; '
-                    'command -v git >/dev/null 2>&1 || missing="$missing git"; '
-                    "printf '%s' \"$missing\""
-                )
-            )
-            packages = (missing_packages.stdout or "").strip()
-            if packages:
-                await self.exec_as_root(
-                    environment,
-                    command=f"apt-get update && apt-get install -y {packages}",
-                    env={"DEBIAN_FRONTEND": "noninteractive"},
-                )
-
-        rendered_script = render_setup_script(
-            self._install_agent_template_path,
-            self._template_variables,
+        root_pkgs = "curl ca-certificates"
+        await self.exec_as_root(
+            environment,
+            command=(
+                f"apt-get update && apt-get install -y --no-install-recommends {root_pkgs}"
+            ),
+            env={"DEBIAN_FRONTEND": "noninteractive"},
         )
-        script_path = self.logs_dir / "install-openclaw.sh"
-        script_path.write_text(rendered_script, newline="\n")
-
-        await environment.upload_file(
-            source_path=script_path,
-            target_path="/installed-agent/install-openclaw.sh",
+        timeout = self._install_exec_timeout_sec
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "set -o pipefail; "
+                "retry_all=$(curl --help all 2>/dev/null | grep -q -- '--retry-all-errors' && echo '--retry-all-errors'); "
+                "curl -fsSL --retry 5 --retry-delay 2 $retry_all "
+                "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh "
+                "| bash"
+            ),
+            timeout_sec=timeout,
         )
         await self.exec_as_agent(
             environment,
-            command="bash /installed-agent/install-openclaw.sh",
+            command=(
+                'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}" && . "$NVM_DIR/nvm.sh" && nvm install 22'
+            ),
+            timeout_sec=timeout,
+        )
+        await self.exec_as_agent(
+            environment,
+            command=_nvm22("node -v && npm -v"),
+            timeout_sec=timeout,
+        )
+        version_spec = f"@{self._version}" if self._version else "@latest"
+        oc_pkg = shlex.quote(f"openclaw{version_spec}")
+        await self.exec_as_agent(
+            environment,
+            command=_nvm22(
+                f"npm install -g {oc_pkg} "
+                "--fetch-retries=5 --fetch-retry-mintimeout=20000 "
+                "--fetch-retry-maxtimeout=120000"
+            ),
+            timeout_sec=timeout,
+        )
+        await self.exec_as_agent(
+            environment,
+            command=_nvm22("openclaw --version"),
+            timeout_sec=timeout,
+        )
+
+    @staticmethod
+    def _load_json_object(raw: str) -> dict[str, Any] | None:
+        text = raw.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
+        return _openclaw_decode_last_json_dict_suffix(text)
+
+    def _parse_stdout(self) -> dict[str, Any] | None:
+        output_path = self.logs_dir / "openclaw.txt"
+        if not output_path.exists():
+            return None
+        return self._load_json_object(output_path.read_text())
+
+    @staticmethod
+    def _provider_env_prefix(provider: str) -> str:
+        """Convert a provider name to its ``<PROVIDER>_*`` env var prefix."""
+        return provider.upper().replace("-", "_")
+
+    def _model_provider(self) -> str | None:
+        """Return the provider segment of "<provider>/<model>" (or ``None``)."""
+        if not self.model_name or "/" not in self.model_name:
+            return None
+        return self.model_name.split("/", 1)[0]
+
+    def _merge_provider_base_url_from_env(self, cfg: dict[str, Any]) -> None:
+        """Apply "<PROVIDER>_BASE_URL" to "models.providers.<provider>" if not already configured.
+
+        Generic across providers; e.g. "openai/gpt-4.1" reads "OPENAI_BASE_URL".
+        """
+        provider = self._model_provider()
+        if not provider:
+            return
+        env_key = f"{self._provider_env_prefix(provider)}_BASE_URL"
+        base = (self._get_env(env_key) or "").strip()
+        if not base:
+            return
+        models = cfg.setdefault("models", {})
+        providers = models.setdefault("providers", {})
+        prov = providers.setdefault(provider, {})
+        if isinstance(prov, dict) and "baseUrl" not in prov:
+            prov["baseUrl"] = base
+
+    def _normalize_provider_models_schema(self, cfg: dict[str, Any]) -> None:
+        """Align "models.providers.<provider>" with OpenClaw's custom provider schema.
+
+        OpenClaw's OpenAI-compatible custom-provider schema expects a ``models`` array
+        alongside ``baseUrl``. When the user (or env merge) added the provider for the
+        currently selected model but omitted ``models``, fill it from ``--model`` so
+        the agent can resolve the selection.
+        """
+        provider = self._model_provider()
+        if not provider:
+            return
+        models_root = cfg.get("models")
+        if not isinstance(models_root, dict):
+            return
+        providers = models_root.get("providers")
+        if not isinstance(providers, dict):
+            return
+        prov_cfg = providers.get(provider)
+        if not isinstance(prov_cfg, dict):
+            return
+
+        raw_models = prov_cfg.get("models")
+        if not isinstance(raw_models, list):
+            prov_cfg["models"] = []
+
+        if len(prov_cfg["models"]) == 0:
+            prov_cfg["models"] = [{"id": self.model_name, "name": self.model_name}]
+
+    def _build_full_openclaw_config(self) -> dict[str, Any]:
+        """Full "openclaw.json" content: setup baseline + task/job overlays."""
+        cfg = copy.deepcopy(self._SETUP_BASELINE)
+        self._deep_merge(cfg, copy.deepcopy(self._DEFAULT_CONFIG))
+        self._deep_merge(cfg, copy.deepcopy(self._openclaw_config))
+        if self.mcp_servers:
+            servers: dict[str, dict[str, Any]] = {}
+            for server in self.mcp_servers:
+                if server.transport == "stdio":
+                    entry: dict[str, Any] = {}
+                    if server.command:
+                        entry["command"] = server.command
+                    if server.args:
+                        entry["args"] = server.args
+                    servers[server.name] = entry
+                elif server.transport == "sse":
+                    servers[server.name] = {
+                        "url": server.url,
+                        "transport": "sse",
+                    }
+                else:
+                    servers[server.name] = {
+                        "url": server.url,
+                        "transport": "streamable-http",
+                    }
+            mcp_patch = cfg.setdefault("mcp", {})
+            existing = mcp_patch.get("servers")
+            merged_servers: dict[str, Any] = (
+                dict(existing) if isinstance(existing, dict) else {}
+            )
+            merged_servers.update(servers)
+            mcp_patch["servers"] = merged_servers
+
+        self._merge_provider_base_url_from_env(cfg)
+        self._normalize_provider_models_schema(cfg)
+        self._merge_harbor_headless_tool_denies(cfg)
+
+        if self._failover_retries is not None:
+            auth = cfg.setdefault("auth", {})
+            cooldowns = auth.setdefault("cooldowns", {})
+            cooldowns["rateLimitedProfileRotations"] = self._failover_retries
+
+        return cfg
+
+    def _trajectory_from_envelope_with_steps(
+        self, envelope: dict[str, Any], steps: list[Step]
+    ) -> Trajectory | None:
+        """ATIF shell from CLI envelope meta + caller-supplied steps (e.g. session JSONL)."""
+        meta = envelope.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+        agent_meta = meta.get("agentMeta")
+        session_id = (
+            agent_meta.get("sessionId")
+            if isinstance(agent_meta, dict)
+            and isinstance(agent_meta.get("sessionId"), str)
+            else None
+        ) or "unknown"
+        usage_fm: dict[str, Any] | None = None
+        if isinstance(agent_meta, dict):
+            u2 = agent_meta.get("usage")
+            if isinstance(u2, dict):
+                usage_fm = u2
+        input_tok_fm = int(usage_fm.get("input") or 0) if usage_fm else 0
+        output_tok_fm = int(usage_fm.get("output") or 0) if usage_fm else 0
+        cache_read_fm = int(usage_fm.get("cacheRead") or 0) if usage_fm else 0
+        prompt_fm = input_tok_fm + cache_read_fm
+        final_metrics = FinalMetrics(
+            total_prompt_tokens=prompt_fm or None,
+            total_completion_tokens=output_tok_fm or None,
+            total_cached_tokens=cache_read_fm or None,
+            total_steps=len(steps),
+        )
+        return Trajectory(
+            schema_version="ATIF-v1.7",
+            session_id=session_id,
+            agent=Agent(
+                name="openclaw",
+                version=self.version() or "unknown",
+                model_name=self.model_name,
+            ),
+            steps=steps,
+            final_metrics=final_metrics,
+        )
+
+    def _convert_envelope_to_trajectory(
+        self, envelope: dict[str, Any], instruction: str
+    ) -> Trajectory | None:
+        """Map OpenClaw CLI JSON (embedded "--local" run) to ATIF."""
+        meta = envelope.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+
+        agent_meta = meta.get("agentMeta")
+        session_id = (
+            agent_meta.get("sessionId")
+            if isinstance(agent_meta, dict)
+            and isinstance(agent_meta.get("sessionId"), str)
+            else None
+        ) or "unknown"
+
+        payloads = envelope.get("payloads")
+        if not isinstance(payloads, list):
+            payloads = []
+
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        for item in payloads:
+            if not isinstance(item, dict):
+                continue
+            t = item.get("text")
+            if not isinstance(t, str) or not t.strip():
+                continue
+            if item.get("isReasoning") is True:
+                reasoning_parts.append(t.strip())
+            else:
+                text_parts.append(t.strip())
+
+        assistant_text = "\n\n".join(text_parts) if text_parts else ""
+        if not assistant_text and isinstance(
+            meta.get("finalAssistantVisibleText"), str
+        ):
+            assistant_text = meta["finalAssistantVisibleText"].strip()
+
+        tool_calls: list[ToolCall] | None = None
+        pending = meta.get("pendingToolCalls")
+        if isinstance(pending, list):
+            calls: list[ToolCall] = []
+            for c in pending:
+                if not isinstance(c, dict):
+                    continue
+                name = c.get("name")
+                if not isinstance(name, str):
+                    continue
+                args_raw = c.get("arguments", "")
+                if isinstance(args_raw, str):
+                    try:
+                        args: dict[str, Any] = (
+                            json.loads(args_raw) if args_raw.strip() else {}
+                        )
+                    except json.JSONDecodeError:
+                        args = {"raw": args_raw}
+                elif isinstance(args_raw, dict):
+                    args = args_raw
+                else:
+                    args = {}
+                cid = c.get("id")
+                calls.append(
+                    ToolCall(
+                        tool_call_id=str(cid) if cid is not None else "",
+                        function_name=name,
+                        arguments=args,
+                    )
+                )
+            if calls:
+                tool_calls = calls
+
+        usage: dict[str, Any] | None = None
+        if isinstance(agent_meta, dict):
+            u = agent_meta.get("usage")
+            if isinstance(u, dict):
+                usage = u
+
+        input_tok = int(usage.get("input") or 0) if usage else 0
+        output_tok = int(usage.get("output") or 0) if usage else 0
+        cache_read = int(usage.get("cacheRead") or 0) if usage else 0
+        cache_write = int(usage.get("cacheWrite") or 0) if usage else 0
+
+        prompt_for_metrics = input_tok + cache_read
+        step_metrics: Metrics | None = None
+        if input_tok or output_tok or cache_read:
+            step_metrics = Metrics(
+                prompt_tokens=prompt_for_metrics or None,
+                completion_tokens=output_tok or None,
+                cached_tokens=cache_read or None,
+                extra=({"cache_write_tokens": cache_write} if cache_write else None),
+            )
+
+        steps: list[Step] = [
+            Step(
+                step_id=1,
+                source="user",
+                message=instruction,
+            ),
+        ]
+        agent_step_kwargs: dict[str, Any] = {
+            "step_id": 2,
+            "source": "agent",
+            "message": assistant_text or "(no assistant text in JSON output)",
+            "model_name": self.model_name,
+        }
+        if reasoning_parts:
+            agent_step_kwargs["reasoning_content"] = "\n\n".join(reasoning_parts)
+        if tool_calls:
+            agent_step_kwargs["tool_calls"] = tool_calls
+        if step_metrics:
+            agent_step_kwargs["metrics"] = step_metrics
+        steps.append(Step(**agent_step_kwargs))
+
+        final_metrics = FinalMetrics(
+            total_prompt_tokens=prompt_for_metrics or None,
+            total_completion_tokens=output_tok or None,
+            total_cached_tokens=cache_read or None,
+            total_steps=len(steps),
+        )
+
+        return Trajectory(
+            schema_version="ATIF-v1.7",
+            session_id=session_id,
+            agent=Agent(
+                name="openclaw",
+                version=self.version() or "unknown",
+                model_name=self.model_name,
+            ),
+            steps=steps,
+            final_metrics=final_metrics,
+        )
+
+    @override
+    def populate_context_post_run(self, context: AgentContext) -> None:
+        envelope = self._parse_stdout()
+        if not envelope:
+            return
+
+        instruction_path = self.logs_dir / "instruction.txt"
+        instruction = ""
+        try:
+            if instruction_path.exists():
+                instruction = instruction_path.read_text()
+        except OSError:
+            pass
+
+        try:
+            trajectory = None
+            if self._use_openclaw_session_jsonl_for_steps:
+                session_path = self.logs_dir / "openclaw.session.jsonl"
+                session_steps = openclaw_session_jsonl_to_atif_steps(
+                    session_path,
+                    instruction=instruction,
+                    model_name=self.model_name or "",
+                )
+                if session_steps:
+                    trajectory = self._trajectory_from_envelope_with_steps(
+                        envelope, session_steps
+                    )
+            if trajectory is None:
+                trajectory = self._convert_envelope_to_trajectory(envelope, instruction)
+        except Exception:
+            self.logger.exception("Failed to convert OpenClaw JSON to trajectory")
+            return
+
+        if not trajectory:
+            return
+
+        trajectory_path = self.logs_dir / "trajectory.json"
+        try:
+            trajectory_path.write_text(
+                format_trajectory_json(trajectory.to_json_dict())
+            )
+            self.logger.debug(f"Wrote OpenClaw trajectory to {trajectory_path}")
+        except OSError as exc:
+            self.logger.debug(
+                f"Failed to write trajectory file {trajectory_path}: {exc}"
+            )
+
+        if trajectory.final_metrics:
+            fm = trajectory.final_metrics
+            context.cost_usd = fm.total_cost_usd
+            context.n_input_tokens = fm.total_prompt_tokens or 0
+            context.n_output_tokens = fm.total_completion_tokens or 0
+            context.n_cache_tokens = fm.total_cached_tokens or 0
+
+    def _build_register_skills_command(self) -> str | None:
+        if not self.skills_dir:
+            return None
+        return (
+            f"mkdir -p ~/.openclaw/skills && "
+            f"cp -r {shlex.quote(self.skills_dir)}/* "
+            f"~/.openclaw/skills/ 2>/dev/null || true"
         )
 
     @with_prompt_template
@@ -195,1211 +886,76 @@ fi
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        workspace = environment.task_env_config.workdir or "/app"
-        for run_command in self.create_run_agent_commands(instruction, workspace):
-            await self.exec_as_agent(
-                environment,
-                command=run_command.command,
-                env=run_command.env,
-                cwd=run_command.cwd,
-                timeout_sec=run_command.timeout_sec,
-            )
-
-    def create_run_agent_commands(
-        self, instruction: str, workspace: str = "/app"
-    ) -> list[_RunCommand]:
-        """
-        Create commands to run OpenClaw agent.
-
-        Command 0: Setup config file and auth profiles
-        Command 1: Run the agent with --json output
-        """
         escaped_instruction = shlex.quote(instruction)
 
-        # Parse model name (format: "provider/model")
         if not self.model_name or "/" not in self.model_name:
-            raise self._config_error(
-                "Model name must be in format 'provider/model' "
-                "(e.g., 'anthropic/claude-opus-4-6')"
-            )
+            raise ValueError("Model name must be in the format provider/model_name")
 
-        provider, model = self.model_name.split("/", 1)
+        provider, _ = self.model_name.split("/", 1)
+        self._validate_provider(provider)
 
-        # Validate context_window for providers without built-in model registries
-        KNOWN_PROVIDERS = {"anthropic", "google", "openai"}
-
-        if provider.lower() not in KNOWN_PROVIDERS and self.context_window is None:
-            raise self._config_error(
-                f"context_window is required for provider '{provider}'. "
-                f"OpenClaw does not have built-in model specs for '{provider}' models "
-                f"and defaults to 200K context, which may exceed your model's actual limit.\n"
-                f"Set via: --ak 'context_window=200000' --ak 'max_tokens=8192'"
-            )
-
-        if self.context_window is not None and self.context_window < 16384:
-            raise self._config_error(
-                f"context_window={self.context_window} is below OpenClaw's minimum (16,384)."
-            )
-
-        # Get API key based on provider
-        api_key = self._get_api_key_for_provider(provider)
-
-        if not api_key:
-            raise self._config_error(
-                f"No API key found for provider '{provider}'. "
-                f"Set {provider.upper()}_API_KEY environment variable."
-            )
-
-        # Build provider config with base URL override and inline model definition
-        provider_config = self._build_provider_config(
+        env: dict[str, str] = {}
+        keys = self._provider_env_keys(provider)
+        self.logger.debug(
+            "OpenClaw forwarding env vars for provider %r: %s",
             provider,
-            model_id=model,
-            context_window=self.context_window,
-            max_tokens=self.max_tokens if self.context_window is not None else None,
-        )
-        provider_config_json = json.dumps(provider_config, indent=4)
-
-        # Build model params config if provided
-        model_params_json = (
-            json.dumps(self.model_params, indent=4) if self.model_params else "{}"
+            list(keys),
         )
 
-        # Environment variables for OpenClaw runtime.
-        # BaseInstalledAgent merges these with _extra_env before environment execution.
-        # Note: Shell variables ($HOME) and globs (v22.*) are NOT expanded in env dicts —
-        # Harbor passes them as literal strings. NVM is sourced explicitly in each command.
-        api_key_env_var = f"{provider.upper()}_API_KEY"
-        env = {
-            api_key_env_var: api_key,
-            "NODE_COMPILE_CACHE": "/var/tmp/openclaw-compile-cache",
-            "OPENCLAW_NO_RESPAWN": "1",
-        }
-
-        # Pass through base URL override if set
-        base_url_env_var = f"{provider.upper()}_BASE_URL"
-        base_url_override = self._extra_env.get(base_url_env_var) or os.environ.get(
-            base_url_env_var
-        )
-        if base_url_override:
-            env[base_url_env_var] = base_url_override
-
-        # Redact API key for log output (matches OpenClaw's maskApiKey format: first8...last8)
-        if len(api_key) > 16:
-            redacted_key = f"{api_key[:8]}...{api_key[-8:]}"
-        else:
-            redacted_key = (
-                f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
-            )
-
-        # Build redacted auth profiles for log output
-        redacted_auth_profiles = {
-            "version": 1,
-            "profiles": {
-                f"{provider}:default": {
-                    "type": "api_key",
-                    "provider": provider,
-                    "key": redacted_key,
-                }
-            },
-            "lastGood": {provider: f"{provider}:default"},
-        }
-        redacted_auth_json = json.dumps(redacted_auth_profiles, indent=2)
-
-        # Pre-escape values for safe interpolation into JavaScript string literals.
-        # json.dumps() produces valid JS strings (JSON is a subset of JS).
-        model_name_js = json.dumps(self.model_name)
-        provider_js = json.dumps(provider)
-        auth_profile_id = f"{provider}:default"
-        auth_profile_id_js = json.dumps(auth_profile_id)
-        thinking_js = json.dumps(self.thinking or "")
-        api_key_env_var_js = json.dumps(api_key_env_var)
-        workspace_js = json.dumps(workspace)
-
-        # Command 0: Update openclaw.json with model, provider config, workspace,
-        # and model params.
-        setup_command = f"""
-# Source NVM explicitly
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-mkdir -p /var/tmp/openclaw-compile-cache
-
-# Update openclaw.json with model, provider config, and model params
-node << 'NODE_EOF'
-const fs = require("fs");
-const path = require("path");
-
-const configPath = path.join(process.env.HOME, ".openclaw", "openclaw.json");
-const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-const workspace = {workspace_js};
-fs.mkdirSync(workspace, {{ recursive: true }});
-
-// The installer seeds OpenClaw's stock prompt files in /workspace. Copy them
-// into the task workdir when Harbor executes tasks elsewhere, so OpenClaw keeps
-// the same base configuration while file edits land where verifiers expect.
-if (workspace !== "/workspace" && fs.existsSync("/workspace")) {{
-    for (const file of fs.readdirSync("/workspace")) {{
-        if (file.endsWith(".md")) {{
-            fs.copyFileSync(path.join("/workspace", file), path.join(workspace, file));
-        }}
-    }}
-}}
-
-if (!config.agents) config.agents = {{}};
-if (!config.agents.defaults) config.agents.defaults = {{}};
-
-// Update model
-if (!config.agents.defaults.model) config.agents.defaults.model = {{}};
-config.agents.defaults.model.primary = {model_name_js};
-config.agents.defaults.workspace = workspace;
-
-// Add provider config
-if (!config.models) config.models = {{}};
-if (!config.models.providers) config.models.providers = {{}};
-const providerConfig = {provider_config_json};
-config.models.providers[{provider_js}] = providerConfig;
-
-// Configure an auth profile that matches OpenClaw's provider:default convention.
-if (!config.auth) config.auth = {{}};
-if (!config.auth.profiles) config.auth.profiles = {{}};
-config.auth.profiles[{auth_profile_id_js}] = {{
-    provider: {provider_js},
-    mode: "api_key"
-}};
-if (!config.auth.order) config.auth.order = {{}};
-config.auth.order[{provider_js}] = [{auth_profile_id_js}];
-
-// Add model params if provided
-const modelParams = {model_params_json};
-if (Object.keys(modelParams).length > 0) {{
-    if (!config.agents.defaults.models) config.agents.defaults.models = {{}};
-    config.agents.defaults.models[{model_name_js}] = {{ params: modelParams }};
-    console.log("Added model params:", Object.keys(modelParams));
-}}
-
-// Set thinking level if provided
-const thinkingLevel = {thinking_js};
-if (thinkingLevel) {{
-    config.agents.defaults.thinkingDefault = thinkingLevel;
-    console.log("Set thinkingDefault:", thinkingLevel);
-}}
-
-fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-// Write auth profiles (API key read from process.env at runtime —
-// avoids bash heredoc expansion issues in sandboxed environments)
-const authProfiles = {{
-    version: 1,
-    profiles: {{
-        [{auth_profile_id_js}]: {{
-            type: "api_key",
-            provider: {provider_js},
-            key: process.env[{api_key_env_var_js}] || ""
-        }}
-    }},
-    lastGood: {{
-        [{provider_js}]: {auth_profile_id_js}
-    }}
-}};
-const authPath = path.join(process.env.HOME, ".openclaw", "agents", "main", "agent", "auth-profiles.json");
-fs.writeFileSync(authPath, JSON.stringify(authProfiles, null, 2));
-if (!authProfiles.profiles[{auth_profile_id_js}].key) {{
-    console.log("WARNING: " + {api_key_env_var_js} + " not found in environment!");
-}} else {{
-    console.log("Auth profile written for provider: " + {provider_js} + " (" + {auth_profile_id_js} + ")");
-}}
-NODE_EOF
-
-# Prepare persistent log directory (downloaded by Harbor even after timeout)
-mkdir -p /logs/agent/openclaw-sessions
-# Reverse symlink: OpenClaw writes sessions to /logs/agent/openclaw-sessions via symlink.
-# This ensures session files physically live under /logs/agent/ (Daytona doesn't follow symlinks).
-ln -sfn /logs/agent/openclaw-sessions ~/.openclaw/agents/main/sessions
-
-# Verify config
-echo "=== OpenClaw Config ==="
-cat ~/.openclaw/openclaw.json
-echo ""
-echo "=== OpenClaw Workspace ==="
-echo {shlex.quote(workspace)}
-echo ""
-echo "=== Auth Profiles ==="
-ls -lh ~/.openclaw/agents/main/agent/auth-profiles.json
-echo ""
-echo "=== Auth Profiles (redacted) ==="
-echo '{redacted_auth_json}'
-echo ""
-""".strip()
-
-        skills_command = self._build_register_skills_command(workspace)
-        if skills_command:
-            setup_command += f"\n\n# Register Harbor task skills\n{skills_command}"
-
-        # Command 1: Run OpenClaw agent and copy session logs
-        # Use --json for structured output, --local for embedded mode
-        # Use tee to persist output to /logs/agent/ (survives timeout — downloaded by Harbor)
-        run_command = f"""
-# Source NVM explicitly
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-mkdir -p /var/tmp/openclaw-compile-cache
-
-# Run OpenClaw agent with tee for persistent output (like Claude Code)
-# Output goes to both stdout (for base.py capture) and /logs/agent/ (survives timeout)
-openclaw agent --local --agent main --message {escaped_instruction} --json 2>&1 | tee /logs/agent/openclaw-output.txt
-
-# Extract session ID, copy session log for ATIF generation, and persist to /logs/agent/
-node << 'COPY_SESSION_EOF'
-const fs = require("fs");
-const path = require("path");
-
-function copySessionById(sessionId) {{
-    const src = path.join(process.env.HOME, ".openclaw", "agents", "main", "sessions", sessionId + ".jsonl");
-    if (fs.existsSync(src)) {{
-        console.log("[Ok] Session log found: " + sessionId);
-        fs.copyFileSync(src, "/logs/agent/openclaw-session.jsonl");
-        console.log("<<<SESSION_START>>>");
-        console.log(fs.readFileSync(src, "utf8"));
-        console.log("<<<SESSION_END>>>");
-        return true;
-    }}
-    return false;
-}}
-
-let sessionCopied = false;
-
-// Primary: extract session ID from OpenClaw JSON output
-const outputFile = "/logs/agent/openclaw-output.txt";
-if (fs.existsSync(outputFile)) {{
-    const content = fs.readFileSync(outputFile, "utf8");
-    // Note: {{{{ / }}}} are Python f-string escapes that render as literal {{ / }} in output
-    const jsonStart = content.indexOf("{{");
-    if (jsonStart !== -1) {{
-        try {{
-            const data = JSON.parse(content.substring(jsonStart));
-            const sessionId = data.meta && data.meta.agentMeta && data.meta.agentMeta.sessionId;
-            if (sessionId) {{
-                sessionCopied = copySessionById(sessionId);
-            }}
-        }} catch (e) {{
-            console.log("Warning: Failed to parse JSON output: " + e.message);
-        }}
-    }}
-    // Print original JSON for Harbor to capture
-    if (content.trim()) console.log(content);
-}}
-
-// Fallback: scan sessions directory for .jsonl files (timeout recovery)
-if (!sessionCopied) {{
-    const sessDir = path.join(process.env.HOME, ".openclaw", "agents", "main", "sessions");
-    if (fs.existsSync(sessDir)) {{
-        const files = fs.readdirSync(sessDir)
-            .filter(f =>
-                f.endsWith(".jsonl") &&
-                !f.endsWith(".trajectory.jsonl") &&
-                !f.endsWith(".lock")
-            )
-            .map(f => ({{ name: f, mtime: fs.statSync(path.join(sessDir, f)).mtimeMs }}))
-            .sort((a, b) => b.mtime - a.mtime);
-        if (files.length > 0) {{
-            const sessionId = files[0].name.replace(".jsonl", "");
-            console.log("Fallback: recovered session from directory: " + sessionId);
-            copySessionById(sessionId);
-        }} else {{
-            console.log("Warning: No session files found in " + sessDir);
-        }}
-    }}
-}}
-COPY_SESSION_EOF
-""".strip()
-
-        return [
-            _RunCommand(
-                command=setup_command,
-                env=env,
-                timeout_sec=30,
-            ),
-            _RunCommand(
-                command=run_command,
-                env=env,
-                cwd=workspace,
-            ),
-        ]
-
-    def _build_register_skills_command(self, workspace: str = "/app") -> str | None:
-        """Copy Harbor task skills into OpenClaw's native skills directory."""
-        if not self.skills_dir:
-            return None
-
-        return (
-            "mkdir -p ~/.openclaw/skills && "
-            f"cp -r {shlex.quote(self.skills_dir)}/* "
-            "~/.openclaw/skills/ 2>/dev/null || true"
-        )
-
-    def populate_context_post_run(self, context: AgentContext) -> None:
-        """
-        Parse OpenClaw session logs and generate ATIF trajectory.
-
-        Steps:
-        1. Parse JSON output to get session_id (runId field)
-        2. Locate session JSONL file (~/.openclaw/agents/main/sessions/<session_id>.jsonl)
-        3. Parse JSONL line-by-line to extract messages
-        4. Convert messages to ATIF Steps
-        5. Build ATIF Trajectory object
-        6. Write trajectory.json to self.logs_dir
-        7. Extract aggregate metrics into context
-
-        Note: This may be called twice — first by base.py run() (before logs are
-        downloaded from sandbox), then by trial.py _maybe_populate_agent_context()
-        (after logs are downloaded). Only set the guard flag on SUCCESS so that
-        the second call gets a chance when session files weren't available yet.
-        """
-        if getattr(self, "_post_run_completed", False):
-            return
-
-        try:
-            # 1. Get session ID from JSON output or session directory
-            session_id = self._extract_session_id()
-
-            # 2. Locate and parse session JSONL
-            messages = self._parse_session_jsonl(session_id)
-
-            # 3. Convert to ATIF
-            trajectory = self._convert_to_atif_trajectory(messages, session_id)
-
-            # 4. Write trajectory.json
-            self._write_trajectory(trajectory)
-
-            # 5. Extract metrics to context
-            self._populate_metrics(context, trajectory)
-
-            # Success — prevent redundant re-invocation
-            self._post_run_completed = True
-
-        except Exception as e:
-            print(f"Error generating ATIF trajectory: {e}")
-            print("Continuing without trajectory file...")
-
-            # Try to extract metrics from OpenClaw JSON as fallback.
-            # Don't set _post_run_completed — allow retry after log download
-            # so the second call can attempt full trajectory generation.
-            try:
-                self._extract_metrics_from_json(context)
-            except Exception as metrics_error:
-                print(f"Warning: Could not extract metrics from JSON: {metrics_error}")
-
-    def _get_openclaw_output(self) -> str:
-        """
-        Get OpenClaw output text from the best available source.
-
-        Sources tried in order:
-        1. command-1/stdout.txt — normal completion (base.py captured it)
-        2. openclaw-output.txt — tee'd file (downloaded from sandbox after timeout)
-
-        Raises ValueError if no output is found.
-        """
-        # Primary: base.py captured stdout on normal completion
-        stdout_path = self.logs_dir / "command-1" / "stdout.txt"
-        if stdout_path.exists():
-            return stdout_path.read_text()
-
-        # Fallback: tee'd file downloaded from sandbox (available after timeout)
-        tee_path = self.logs_dir / "openclaw-output.txt"
-        if tee_path.exists():
-            content = tee_path.read_text()
-            if content.strip():
-                return content
-
-        # No output found — determine failure type for error message
-        cmd_dir = self.logs_dir / "command-1"
-        if not cmd_dir.exists():
-            raise ValueError("Command 1 did not run (directory missing)")
-        else:
-            raise ValueError(
-                "No OpenClaw output captured (agent likely timed out before producing output)"
-            )
-
-    @staticmethod
-    def _parse_first_json_object(text: str) -> dict | None:
-        """Parse the first JSON object from text, ignoring leading non-JSON content.
-
-        Uses raw_decode to handle cases where OpenClaw appends tool errors
-        or other text after the JSON object.
-
-        Returns the parsed dict, or None if no valid JSON object is found.
-        """
-        json_start = text.find("{")
-        if json_start == -1:
-            return None
-        try:
-            data, _ = json.JSONDecoder().raw_decode(text[json_start:])
-            return data
-        except json.JSONDecodeError:
-            return None
-
-    def _extract_session_id(self) -> str:
-        """
-        Extract session ID from OpenClaw output using multiple strategies.
-
-        1. Primary: JSON summary after <<<SESSION_END>>> (normal completion)
-        2. Session JSONL header between <<<SESSION_START>>> and <<<SESSION_END>>>
-           (timeout recovery — node script embeds session content in stdout)
-        3. Scan openclaw-sessions/ directory for .jsonl files (last resort)
-        """
-        raw_output = None
-        try:
-            raw_output = self._get_openclaw_output()
-        except ValueError:
-            pass
-
-        if raw_output:
-            # Strategy 1: JSON summary after session markers (normal completion)
-            session_end = raw_output.rfind("<<<SESSION_END>>>")
-            if session_end != -1:
-                json_text = raw_output[session_end + len("<<<SESSION_END>>>") :]
-                data = self._parse_first_json_object(json_text)
-                if data:
-                    session_id = (
-                        data.get("meta", {}).get("agentMeta", {}).get("sessionId")
-                    )
-                    if session_id:
-                        return session_id
-
-            # Strategy 2: Parse session ID from JSONL header between markers
-            # The node script's fallback embeds the full session JSONL in stdout.
-            # First line is: {"type":"session","id":"<uuid>",...}
-            session_start = raw_output.rfind("<<<SESSION_START>>>")
-            if (
-                session_start != -1
-                and session_end != -1
-                and session_start < session_end
-            ):
-                session_content = raw_output[
-                    session_start + len("<<<SESSION_START>>>") : session_end
-                ].strip()
-                first_line = session_content.split("\n", 1)[0].strip()
-                if first_line:
-                    try:
-                        header = json.loads(first_line)
-                        if header.get("type") == "session" and header.get("id"):
-                            return header["id"]
-                    except json.JSONDecodeError:
-                        pass
-
-            # Strategy 2b: No markers — try raw JSON (edge case)
-            if session_end == -1:
-                data = self._parse_first_json_object(raw_output)
-                if data:
-                    session_id = (
-                        data.get("meta", {}).get("agentMeta", {}).get("sessionId")
-                    )
-                    if session_id:
-                        return session_id
-
-        # Strategy 3: Scan openclaw-sessions/ directory for .jsonl files
-        session_id = self._discover_session_id_from_dir()
-        if session_id:
-            return session_id
-
-        raise ValueError(
-            "No session ID found: no JSON output, no session markers, and no session "
-            "files in openclaw-sessions/. Agent likely timed out before starting."
-        )
-
-    def _discover_session_id_from_dir(self) -> str | None:
-        """
-        Discover session ID by scanning the openclaw-sessions/ directory.
-
-        Returns the session ID (filename stem) if exactly one .jsonl file is found,
-        or the most recently modified one if multiple exist.
-        """
-        sessions_dir = self.logs_dir / "openclaw-sessions"
-        if not sessions_dir.exists():
-            return None
-
-        jsonl_files = sorted(
-            (
-                path
-                for path in sessions_dir.glob("*.jsonl")
-                if not path.name.endswith(".trajectory.jsonl")
-                and not path.name.endswith(".lock")
-            ),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )
-
-        if not jsonl_files:
-            return None
-
-        if len(jsonl_files) > 1:
-            print(f"Warning: Found {len(jsonl_files)} session files, using most recent")
-
-        return jsonl_files[0].stem
-
-    def _get_session_content(self, session_id: str) -> str | None:
-        """
-        Get OpenClaw session JSONL content from the best available source.
-
-        Sources tried in order:
-        1. Session markers in command-1/stdout.txt (normal completion)
-        2. openclaw-session.jsonl (copied by node script, normal completion)
-        3. openclaw-sessions/<session_id>.jsonl (symlinked dir, downloaded after timeout)
-        """
-        # Primary: session markers in stdout
-        stdout_path = self.logs_dir / "command-1" / "stdout.txt"
-        if stdout_path.exists():
-            raw_output = stdout_path.read_text()
-            start_idx = raw_output.find("<<<SESSION_START>>>")
-            end_idx = raw_output.rfind("<<<SESSION_END>>>")
-            if start_idx != -1 and end_idx != -1:
-                return raw_output[
-                    start_idx + len("<<<SESSION_START>>>") : end_idx
-                ].strip()
-
-        # Fallback 1: copied session file (node script persisted it)
-        session_path = self.logs_dir / "openclaw-session.jsonl"
-        if session_path.exists():
-            return session_path.read_text()
-
-        # Fallback 2: symlinked sessions directory (downloaded from sandbox)
-        sessions_dir = self.logs_dir / "openclaw-sessions"
-        if sessions_dir.exists():
-            session_file = sessions_dir / f"{session_id}.jsonl"
-            if session_file.exists():
-                return session_file.read_text()
-
-        return None
-
-    def _parse_session_jsonl(self, session_id: str) -> list[dict]:
-        """
-        Parse OpenClaw session JSONL content.
-
-        Returns list of message objects (excluding header).
-        Tries multiple sources: stdout markers, copied session file, symlinked dir.
-        """
-        session_content = self._get_session_content(session_id)
-
-        if not session_content:
-            print(f"Warning: No session data found for session {session_id}")
-            print(
-                "Checked: command-1/stdout.txt, openclaw-session.jsonl, openclaw-sessions/"
-            )
-            return []
-
-        messages = []
-        for line_num, line in enumerate(session_content.split("\n"), 1):
-            line = line.strip()
-            if not line:
-                continue
-
-            try:
-                entry = json.loads(line)
-
-                # Skip header (first line with type: "session")
-                if entry.get("type") == "session":
-                    continue
-
-                # Extract message object
-                message = entry.get("message")
-                if message:
-                    messages.append(message)
-            except json.JSONDecodeError as e:
-                print(f"Warning: Failed to parse JSONL line {line_num}: {e}")
-                continue
-
-        return messages
-
-    def _get_openclaw_trajectory_content(self, session_id: str) -> str | None:
-        """
-        Get OpenClaw's native trajectory JSONL content, if it was downloaded.
-
-        The raw session JSONL contains messages, while the sibling
-        <session_id>.trajectory.jsonl contains context metadata such as the
-        compiled tool definitions.
-        """
-        candidates = [
-            self.logs_dir / "openclaw-trajectory.jsonl",
-            self.logs_dir / "openclaw-sessions" / f"{session_id}.trajectory.jsonl",
-        ]
-
-        for path in candidates:
-            if path.exists():
-                return path.read_text()
-
-        return None
-
-    @staticmethod
-    def _normalize_tool_definition(tool: dict[str, Any]) -> dict[str, Any] | None:
-        """Normalize OpenClaw tool schemas to OpenAI function definition shape."""
-        function = tool.get("function")
-        if isinstance(function, dict):
-            return {
-                "type": "function",
-                "function": function,
-            }
-
-        name = tool.get("name")
-        if not isinstance(name, str) or not name:
-            return None
-
-        normalized_function: dict[str, Any] = {"name": name}
-
-        description = tool.get("description")
-        if isinstance(description, str):
-            normalized_function["description"] = description
-
-        parameters = tool.get("parameters")
-        if isinstance(parameters, dict):
-            normalized_function["parameters"] = parameters
-
-        strict = tool.get("strict")
-        if isinstance(strict, bool):
-            normalized_function["strict"] = strict
-
-        return {
-            "type": "function",
-            "function": normalized_function,
-        }
-
-    def _extract_tool_definitions(self, session_id: str) -> list[dict[str, Any]] | None:
-        """Extract compiled tool definitions from OpenClaw trajectory JSONL."""
-        trajectory_content = self._get_openclaw_trajectory_content(session_id)
-        if not trajectory_content:
-            return None
-
-        for line_num, line in enumerate(trajectory_content.split("\n"), 1):
-            line = line.strip()
-            if not line:
-                continue
-
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError as e:
-                print(f"Warning: Failed to parse trajectory JSONL line {line_num}: {e}")
-                continue
-
-            if entry.get("type") != "context.compiled":
-                continue
-
-            tools = (entry.get("data") or {}).get("tools")
-            if not isinstance(tools, list):
-                return None
-
-            tool_definitions = [
-                normalized
-                for tool in tools
-                if isinstance(tool, dict)
-                and (normalized := self._normalize_tool_definition(tool)) is not None
-            ]
-            return tool_definitions or None
-
-        return None
-
-    def _save_image(
-        self, image_data: str, step_id: int, obs_index: int = 0, image_index: int = 0
-    ) -> tuple[str, ImageMediaType] | tuple[None, None]:
-        """Save base64 image data to images directory.
-
-        Args:
-            image_data: Base64-encoded image string
-            step_id: Step ID for filename
-            obs_index: Observation index within step
-            image_index: Image index within observation
-
-        Returns:
-            Tuple of (relative_path, media_type) or (None, None) on failure
-        """
-        # Create images_dir
-        images_dir = self.logs_dir / "images"
-        images_dir.mkdir(exist_ok=True)
-
-        # Detect MIME type from base64 prefix
-        # /9j/ = JPEG, iVBOR = PNG, R0lGO = GIF, UklGR = WEBP
-        media_type: ImageMediaType = "image/png"  # default
-        ext = "png"
-
-        if image_data.startswith("/9j/"):
-            media_type, ext = "image/jpeg", "jpg"
-        elif image_data.startswith("R0lGO"):
-            media_type, ext = "image/gif", "gif"
-        elif image_data.startswith("UklGR"):
-            media_type, ext = "image/webp", "webp"
-
-        # Generate filename
-        filename = f"step_{step_id}_obs_{obs_index}_img_{image_index}.{ext}"
-        image_path = images_dir / filename
-
-        # Decode and write
-        try:
-            image_bytes = base64.b64decode(image_data)
-            image_path.write_bytes(image_bytes)
-            return f"images/{filename}", media_type
-        except Exception as e:
-            print(f"Warning: Failed to save image: {e}")
-            return None, None
-
-    def _parse_content_blocks(
-        self,
-        content: list[dict],
-        step_id: int,
-        is_observation: bool = False,
-        obs_index: int = 0,
-    ) -> tuple[str | list[ContentPart], str | None, list[dict]]:
-        """Parse OpenClaw content blocks into ATIF components.
-
-        Args:
-            content: OpenClaw content array
-            step_id: Current step ID for image filenames
-            is_observation: True if parsing toolResult content
-            obs_index: Observation index (for image filenames)
-
-        Returns:
-            Tuple of (message_content, reasoning_content, tool_calls_data)
-            - message_content: str or list[ContentPart] for ATIF message field
-            - reasoning_content: str or None (thinking blocks)
-            - tool_calls_data: list of tool call dicts (empty if is_observation=True)
-        """
-        text_parts = []
-        reasoning_parts = []
-        tool_calls_data = []
-        image_parts = []
-        image_index = 0
-
-        for block in content:
-            block_type = block.get("type")
-
-            if block_type == "text":
-                text_parts.append(block.get("text", ""))
-
-            elif block_type == "thinking":
-                reasoning_parts.append(block.get("thinking", ""))
-
-            elif block_type == "toolCall" and not is_observation:
-                tool_calls_data.append(block)
-
-            elif block_type == "image":
-                # Save image and create ContentPart
-                image_data = block.get("data", "")
-                if image_data:
-                    path, media_type = self._save_image(
-                        image_data, step_id, obs_index, image_index
-                    )
-                    if path and media_type:
-                        image_parts.append(
-                            ContentPart(
-                                type="image",
-                                source=ImageSource(media_type=media_type, path=path),
-                            )
-                        )
-                        image_index += 1
-
-        # Build message content
-        text = "\n\n".join(p.strip() for p in text_parts if p.strip())
-
-        if image_parts:
-            # Multimodal content
-            content_parts = []
-            if text:
-                content_parts.append(ContentPart(type="text", text=text))
-            content_parts.extend(image_parts)
-            message_content = content_parts
-        else:
-            # Text-only
-            message_content = text if text else ""
-
-        # Build reasoning
-        reasoning = "\n\n".join(p.strip() for p in reasoning_parts if p.strip())
-        reasoning_content = reasoning if reasoning else None
-
-        return message_content, reasoning_content, tool_calls_data
-
-    def _create_tool_calls(self, tool_calls_data: list[dict]) -> list[ToolCall] | None:
-        """Convert OpenClaw toolCall blocks to ATIF ToolCall objects.
-
-        Args:
-            tool_calls_data: List of OpenClaw toolCall content blocks
-
-        Returns:
-            List of ATIF ToolCall objects or None
-        """
-        if not tool_calls_data:
-            return None
-
-        tool_calls = []
-        for tc in tool_calls_data:
-            extra = {
-                "openclaw_type": tc.get("type"),
-            }
-            extra = {key: value for key, value in extra.items() if value is not None}
-
-            tool_calls.append(
-                ToolCall(
-                    tool_call_id=tc.get("id", ""),
-                    function_name=tc.get("name", ""),
-                    arguments=tc.get("arguments", {}),
-                    extra=extra or None,
-                )
-            )
-        return tool_calls
-
-    def _convert_to_atif_trajectory(
-        self, messages: list[dict], session_id: str
-    ) -> Trajectory:
-        """
-        Convert OpenClaw messages to ATIF Trajectory.
-
-        Maps:
-        - OpenClaw message roles → ATIF step sources
-        - OpenClaw content blocks → ATIF content
-        - OpenClaw usage → ATIF metrics
-        - OpenClaw thinking → ATIF reasoning_content
-        """
-        # Build Agent metadata
-        tool_definitions = self._extract_tool_definitions(session_id)
-        agent = Agent(
-            name=self.name(),
-            version=self.version() or "unknown",
-            model_name=self.model_name,
-            tool_definitions=tool_definitions,
-            extra={
-                "openclaw_session_id": session_id,
-            },
-        )
-
-        # Convert messages to steps
-        steps = []
-        step_id = 1
-        total_input = 0
-        total_output = 0
-        total_cached = 0
-        total_cost = 0.0
-
-        for msg in messages:
-            role = msg.get("role")
-            content_raw = msg.get("content", "")
-            timestamp = msg.get("timestamp")
-            usage = msg.get("usage", {})
-            model_name = msg.get("model")
-
-            # Map OpenClaw role to ATIF source
-            if role == "user":
-                source = "user"
-            elif role == "assistant":
-                source = "agent"
-            elif role == "toolResult":
-                source = "agent"  # Per ATIF validator, observations come from agent
-            elif role == "system":
-                source = "system"
+        for key in keys:
+            val = self._get_env(key)
+            if val:
+                env[key] = val
             else:
-                source = "system"  # Fallback
+                self.logger.debug("Missing optional env key for OpenClaw run: %s", key)
 
-            # Parse content blocks (handles text, thinking, tool calls, images)
-            if isinstance(content_raw, str):
-                # Simple text message
-                message_content = content_raw
-                reasoning_content = None
-                tool_calls_data = []
-            elif isinstance(content_raw, list):
-                # Complex content with mixed types
-                if role == "toolResult":
-                    message_content, reasoning_content, _ = self._parse_content_blocks(
-                        content_raw, step_id, is_observation=True, obs_index=0
-                    )
-                    tool_calls_data = []
-                else:
-                    message_content, reasoning_content, tool_calls_data = (
-                        self._parse_content_blocks(
-                            content_raw, step_id, is_observation=False
-                        )
-                    )
-            else:
-                message_content = str(content_raw) if content_raw else ""
-                reasoning_content = None
-                tool_calls_data = []
-
-            # Build tool calls
-            tool_calls = (
-                self._create_tool_calls(tool_calls_data) if tool_calls_data else None
+        upload_path = self.logs_dir / self._UPLOAD_CONFIG_FILENAME
+        upload_path.write_text(
+            json.dumps(
+                self._build_full_openclaw_config(),
+                indent=2,
             )
-
-            # Build observation for toolResult messages
-            observation = None
-            if role == "toolResult":
-                result_extra = None
-                if "isError" in msg:
-                    result_extra = {"isError": msg.get("isError")}
-
-                # Note: Setting source_call_id=None because OpenClaw has tool calls
-                # and results in separate messages, but ATIF validator expects them
-                # in the same step. The temporal order is preserved by separate steps.
-                observation = Observation(
-                    results=[
-                        ObservationResult(
-                            source_call_id=None,  # Cannot reference previous step's tool_call_id
-                            content=message_content,
-                            extra=result_extra,
-                        )
-                    ]
-                )
-
-            # Build timestamp (convert Unix ms to ISO 8601)
-            iso_timestamp = None
-            if timestamp is not None:
-                iso_timestamp = (
-                    datetime.fromtimestamp(timestamp / 1000.0, tz=timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                )
-
-            # Build metrics (only for agent steps)
-            metrics = None
-            if source == "agent" and usage:
-                metrics = Metrics(
-                    prompt_tokens=usage.get("input"),
-                    completion_tokens=usage.get("output"),
-                    cached_tokens=usage.get("cacheRead"),
-                    cost_usd=(usage.get("cost") or {}).get("total"),
-                    extra={
-                        "cache_creation_tokens": usage.get("cacheWrite"),
-                        "total_tokens": usage.get("totalTokens"),
-                    },
-                )
-
-                # Accumulate for final metrics
-                total_input += usage.get("input") or 0
-                total_output += usage.get("output") or 0
-                total_cached += usage.get("cacheRead") or 0
-                step_cost = (usage.get("cost") or {}).get("total")
-                if step_cost:
-                    total_cost += step_cost
-
-            # Build step extra metadata
-            step_extra: dict[str, object] = {
-                "openclaw_role": role,
-                "stop_reason": msg.get("stopReason"),
-                "tool_call_id": msg.get("toolCallId") if role == "toolResult" else None,
-            }
-            if role == "toolResult":
-                details = msg.get("details", {})
-                if details:
-                    step_extra["exec_exit_code"] = details.get("exitCode")
-                    step_extra["exec_status"] = details.get("status")
-                    step_extra["exec_duration_ms"] = details.get("durationMs")
-                if "isError" in msg:
-                    step_extra["isError"] = msg.get("isError")
-
-            llm_call_count = None
-            if role == "assistant":
-                llm_call_count = 1
-            elif role == "toolResult":
-                llm_call_count = 0
-
-            # Create step
-            step = Step(
-                step_id=step_id,
-                timestamp=iso_timestamp,
-                source=source,
-                model_name=model_name if source == "agent" else None,
-                message=message_content,  # Now can be str or list[ContentPart]
-                reasoning_content=reasoning_content if source == "agent" else None,
-                tool_calls=tool_calls if source == "agent" else None,
-                observation=observation,
-                metrics=metrics,
-                llm_call_count=llm_call_count,
-                extra=step_extra,
-            )
-            steps.append(step)
-            step_id += 1
-
-        # Build final metrics
-        final_metrics = FinalMetrics(
-            total_prompt_tokens=total_input,
-            total_completion_tokens=total_output,
-            total_cached_tokens=total_cached,
-            total_cost_usd=total_cost if total_cost else None,
-            total_steps=len(steps),
-        )
-
-        # Build trajectory
-        trajectory = Trajectory(
-            schema_version="ATIF-v1.7",
-            session_id=session_id,
-            trajectory_id=session_id,
-            agent=agent,
-            steps=steps,
-            final_metrics=final_metrics,
-        )
-
-        return trajectory
-
-    def _write_trajectory(self, trajectory: Trajectory) -> None:
-        """Write ATIF trajectory to trajectory.json."""
-        trajectory_path = self.logs_dir / "trajectory.json"
-
-        trajectory_path.write_text(
-            json.dumps(trajectory.to_json_dict(), indent=2, ensure_ascii=False),
+            + "\n",
             encoding="utf-8",
         )
 
-    def _populate_metrics(self, context: AgentContext, trajectory: Trajectory) -> None:
-        """Extract metrics from trajectory into Harbor context."""
-        if trajectory.final_metrics:
-            context.n_input_tokens = trajectory.final_metrics.total_prompt_tokens or 0
-            context.n_output_tokens = (
-                trajectory.final_metrics.total_completion_tokens or 0
-            )
-            context.n_cache_tokens = trajectory.final_metrics.total_cached_tokens or 0
-            context.cost_usd = trajectory.final_metrics.total_cost_usd
-
-    def _extract_metrics_from_json(self, context: AgentContext) -> None:
-        """
-        Fallback method to extract metrics directly from OpenClaw JSON output.
-
-        Used when ATIF generation fails but we still want metrics.
-        Uses _get_openclaw_output() which checks both stdout.txt and tee'd fallback.
-        """
         try:
-            raw_output = self._get_openclaw_output()
-        except ValueError:
-            raise ValueError("Cannot extract metrics - no output available")
+            instruction_path = self.logs_dir / "instruction.txt"
+            instruction_path.write_text(instruction)
+        except OSError:
+            pass
 
-        # Extract JSON (after session delimiters if present)
-        session_end = raw_output.rfind("<<<SESSION_END>>>")
-        if session_end != -1:
-            json_text = raw_output[session_end + len("<<<SESSION_END>>>") :]
-        else:
-            json_text = raw_output
-
-        data = self._parse_first_json_object(json_text)
-        if data is None:
-            raise ValueError("Cannot extract metrics - no JSON found")
-
-        # Extract metrics from meta.agentMeta.usage
-        usage = data.get("meta", {}).get("agentMeta", {}).get("usage", {})
-
-        if usage:
-            context.n_input_tokens = usage.get("input") or 0
-            context.n_output_tokens = usage.get("output") or 0
-            context.n_cache_tokens = usage.get("cacheRead") or 0
-            cost_data = usage.get("cost")
-            if isinstance(cost_data, dict) and cost_data.get("total"):
-                context.cost_usd = cost_data["total"]
-        else:
-            raise ValueError("No usage data found in OpenClaw JSON")
-
-    @staticmethod
-    def _config_error(msg: str) -> ValueError:
-        """Print configuration error to console and return ValueError for raising."""
-        print(f"ERROR [OpenClaw] {msg}")
-        return ValueError(msg)
-
-    def _get_api_key_for_provider(self, provider: str) -> str | None:
-        """Get API key for a given provider from environment variables.
-
-        Checks Harbor's extra_env (from AgentConfig) first, then falls back to os.environ.
-        """
-        # Map provider names to environment variable names
-        provider_env_map = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "google": "GOOGLE_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-        }
-
-        env_var = provider_env_map.get(provider.lower())
-        if not env_var:
-            # Generic fallback: <PROVIDER>_API_KEY
-            env_var = f"{provider.upper()}_API_KEY"
-
-        # Check extra_env first (from Harbor AgentConfig), then os.environ
-        return self._extra_env.get(env_var) or os.environ.get(env_var)
-
-    def _build_provider_config(
-        self,
-        provider: str,
-        model_id: str | None = None,
-        context_window: int | None = None,
-        max_tokens: int | None = None,
-    ) -> dict:
-        """
-        Build provider configuration with base URL override and inline model definition.
-
-        Args:
-            provider: Provider name (e.g., "anthropic", "google", "openai", "openrouter")
-            model_id: Model ID without provider prefix (for inline model definition)
-            context_window: Model context window (maps to OpenClaw's contextWindow)
-            max_tokens: Model max output tokens (maps to OpenClaw's maxTokens)
-
-        Checks for <PROVIDER>_BASE_URL env var in extra_env (from Harbor AgentConfig)
-        first, then falls back to os.environ.
-        """
-        # Default provider configurations
-        provider_defaults = {
-            "anthropic": {
-                "baseUrl": "https://api.anthropic.com",
-                "api": "anthropic-messages",
-            },
-            "google": {
-                "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
-                "api": "google-generative-ai",
-            },
-            "openai": {
-                "baseUrl": "https://api.openai.com/v1",
-                "api": "openai-completions",
-            },
-            "openrouter": {
-                "baseUrl": "https://openrouter.ai/api/v1",
-                "api": "openai-completions",
-            },
-        }
-
-        # Check for base URL override via env var (extra_env first, then os.environ)
-        base_url_env_var = f"{provider.upper()}_BASE_URL"
-        base_url_override = self._extra_env.get(base_url_env_var) or os.environ.get(
-            base_url_env_var
+        await self.exec_as_agent(
+            environment,
+            command=_nvm22("openclaw setup --workspace ."),
+            env=env,
         )
 
-        # Get default config for known providers, or require base URL for unknown ones
-        config = provider_defaults.get(provider.lower())
-        if config is None:
-            if not base_url_override:
-                raise self._config_error(
-                    f"Unknown provider '{provider}'. Either use a known provider "
-                    f"(anthropic, openai, google, openrouter) or set {base_url_env_var} "
-                    f"environment variable."
-                )
-            config = {
-                "baseUrl": base_url_override,
-                "api": "openai-completions",
-            }
-        elif base_url_override:
-            config["baseUrl"] = self._normalize_provider_base_url(
-                provider, base_url_override
-            )
+        copy_upload = (
+            "mkdir -p ~/.openclaw && cp "
+            f"{shlex.quote(f'{self._CONTAINER_LOGS_AGENT}/{self._UPLOAD_CONFIG_FILENAME}')} "
+            "~/.openclaw/openclaw.json"
+        )
+        await self.exec_as_agent(
+            environment,
+            command=copy_upload,
+            env=env,
+        )
 
-        # Add API key (as env var name, not value)
-        config["apiKey"] = f"{provider.upper()}_API_KEY"
+        skills_command = self._build_register_skills_command()
+        if skills_command:
+            await self.exec_as_agent(environment, command=skills_command, env=env)
 
-        # Build inline model definition if context_window is provided
-        # This overrides OpenClaw's 200K fallback for unknown models
-        if context_window is not None:
-            model_def = {
-                "id": model_id,
-                "name": model_id,
-                "contextWindow": context_window,
-            }
-            if max_tokens is not None:
-                model_def["maxTokens"] = max_tokens
-            config["models"] = [model_def]
-        else:
-            config["models"] = []
-
-        return config
-
-    @staticmethod
-    def _normalize_provider_base_url(provider: str, base_url: str) -> str:
-        """Normalize provider API roots for OpenClaw model calls."""
-        normalized = base_url.rstrip("/")
-        if provider.lower() == "openai" and not normalized.endswith("/v1"):
-            return f"{normalized}/v1"
-        return normalized
+        cli_flags = self.build_cli_flags()
+        cli_flags_arg = (cli_flags + " ") if cli_flags else ""
+        command = (
+            ". ~/.nvm/nvm.sh && nvm use 22 && "
+            f"openclaw agent --local --json {cli_flags_arg}"
+            f"--model {shlex.quote(self.model_name)} "
+            f"--message {escaped_instruction} "
+            f"2>&1 </dev/null | stdbuf -oL tee /logs/agent/openclaw.txt"
+        )
+        self.logger.debug("OpenClaw agent env keys: %s", sorted(env))
+        self.logger.debug("OpenClaw agent command: %s", command)
+        await self.exec_as_agent(environment, command, env=env)
+        await self._copy_openclaw_session_file_to_agent_logs(environment, env)

@@ -1,3 +1,4 @@
+from typing import override
 import json
 import os
 import shlex
@@ -25,15 +26,19 @@ class Pi(BaseInstalledAgent):
     ]
 
     @staticmethod
+    @override
     def name() -> str:
         return AgentName.PI.value
 
+    @override
     def get_version_command(self) -> str | None:
         return ". ~/.nvm/nvm.sh; pi --version"
 
+    @override
     def parse_version(self, stdout: str) -> str:
         return stdout.strip().splitlines()[-1].strip()
 
+    @override
     async def install(self, environment: BaseEnvironment) -> None:
         await self.exec_as_root(
             environment,
@@ -112,11 +117,6 @@ class Pi(BaseInstalledAgent):
             keys.append("OPENROUTER_API_KEY")
         elif provider == "xai":
             keys.append("XAI_API_KEY")
-        else:
-            raise ValueError(
-                f"Unknown provider '{provider}'. If you believe this provider "
-                "should be supported, please contact the maintainers."
-            )
 
         for key in keys:
             val = os.environ.get(key)
@@ -143,11 +143,12 @@ class Pi(BaseInstalledAgent):
                 f"{model_args}"
                 f"{cli_flags}"
                 f"{escaped_instruction} "
-                f"2>&1 </dev/null | stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
+                f'2>&1 </dev/null | grep -v \'"type":"message_update"\' | stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}'
             ),
             env=env,
         )
 
+    @override
     def populate_context_post_run(self, context: AgentContext) -> None:
         output_file = self.logs_dir / self._OUTPUT_FILENAME
         if not output_file.exists():

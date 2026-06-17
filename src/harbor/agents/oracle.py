@@ -1,3 +1,4 @@
+from typing import override
 from pathlib import Path
 
 from harbor.agents.base import BaseAgent
@@ -10,7 +11,7 @@ from harbor.utils.scripts import (
     quote_shell_arg,
 )
 from harbor.models.task.task import Task
-from harbor.models.trial.paths import TrialPaths
+from harbor.models.trial.paths import EnvironmentPaths, TrialPaths
 from harbor.utils.env import resolve_env_vars
 
 
@@ -19,6 +20,7 @@ class OracleAgent(BaseAgent):
     SUPPORTS_WINDOWS: bool = True
 
     @staticmethod
+    @override
     def name() -> str:
         return AgentName.ORACLE.value
 
@@ -39,9 +41,11 @@ class OracleAgent(BaseAgent):
         self._agent_timeout_sec = agent_timeout_sec
         self._step_index = 0
 
+    @override
     def version(self) -> str:
         return "1.0.0"
 
+    @override
     async def setup(self, environment: BaseEnvironment) -> None:
         return
 
@@ -69,13 +73,14 @@ class OracleAgent(BaseAgent):
             return self._task.paths.solution_dir, discovered
         return self._task.paths.solution_dir, self._task.paths.solve_path
 
+    @override
     async def run(
         self,
         instruction: str,
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        env_paths = environment.env_paths
+        env_paths = EnvironmentPaths.for_os(environment.os)
         try:
             host_oracle_path = self._trial_paths.agent_dir / self._ORACLE_LOG_FILE
             container_oracle_path = env_paths.agent_dir / self._ORACLE_LOG_FILE

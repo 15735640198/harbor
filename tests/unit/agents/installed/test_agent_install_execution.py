@@ -38,6 +38,30 @@ class TestAgentInstallExecution:
     """Test that agent install() methods execute without errors against a mock environment."""
 
     @pytest.mark.asyncio
+    async def test_claude_code_installs_procps_for_tree_kill(self, temp_dir):
+        """Claude Code needs ps/pgrep for node-tree-kill process cleanup."""
+        agent = ClaudeCode(logs_dir=temp_dir)
+        environment = AsyncMock()
+        environment.exec.side_effect = [
+            AsyncMock(return_code=1, stdout="", stderr=""),
+            AsyncMock(return_code=0, stdout="", stderr=""),
+            AsyncMock(return_code=0, stdout="", stderr=""),
+        ]
+
+        await agent.install(environment)
+
+        root_commands = [
+            call.kwargs["command"]
+            for call in environment.exec.call_args_list
+            if call.kwargs.get("user") == "root"
+        ]
+        install_command = "\n".join(root_commands)
+
+        assert "apk add --no-cache curl bash nodejs npm procps" in install_command
+        assert "apt-get update && apt-get install -y curl procps" in install_command
+        assert "yum install -y curl procps-ng" in install_command
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("agent_class", ALL_AGENTS)
     async def test_install_calls_exec_setup(self, agent_class, temp_dir):
         """Test that install() calls environment.exec() with expected patterns."""
@@ -50,6 +74,17 @@ class TestAgentInstallExecution:
                     AsyncMock(return_code=0, stdout="", stderr=""),
                     AsyncMock(return_code=0, stdout="", stderr=""),
                 ]
+            elif agent_class is Codex:
+
+                def exec_side_effect(*args, **kwargs):
+                    command = kwargs.get("command", "")
+                    return AsyncMock(
+                        return_code=1 if command == Codex._INSTALL_CHECK_COMMAND else 0,
+                        stdout="",
+                        stderr="",
+                    )
+
+                environment.exec.side_effect = exec_side_effect
             else:
                 environment.exec.return_value = AsyncMock(
                     return_code=0, stdout="", stderr=""
@@ -88,7 +123,7 @@ class TestAgentInstallExecution:
         command = environment.exec.call_args.kwargs["command"]
         assert "command -v claude" in command
         assert "claude --version" in command
-        assert "claude.ai/install.sh" not in command
+        assert "downloads.claude.ai/claude-code-releases/bootstrap.sh" not in command
         assert "npm install -g @anthropic-ai/claude-code" not in command
 
     @pytest.mark.asyncio
@@ -105,4 +140,7 @@ class TestAgentInstallExecution:
 
         commands = [call.kwargs["command"] for call in environment.exec.call_args_list]
         assert "command -v claude" in commands[0]
-        assert any("claude.ai/install.sh" in command for command in commands)
+        assert any(
+            "downloads.claude.ai/claude-code-releases/bootstrap.sh" in command
+            for command in commands
+        )

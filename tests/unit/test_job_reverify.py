@@ -30,6 +30,7 @@ from harbor.models.verifier.result import VerifierResult
 def _write_task(task_dir: Path, name: str = "org/task") -> None:
     (task_dir / "environment").mkdir(parents=True)
     (task_dir / "tests").mkdir()
+    (task_dir / "tests" / "test.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
     (task_dir / "instruction.md").write_text("Do the thing.\n")
     (task_dir / "task.toml").write_text(f'[task]\nname = "{name}"\n')
 

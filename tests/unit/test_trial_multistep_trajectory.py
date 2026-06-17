@@ -7,7 +7,7 @@ from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import Agent, FinalMetrics, Step, Trajectory
 from harbor.models.trial.paths import TrialPaths
 from harbor.models.trial.result import StepResult
-from harbor.trial.trial import Trial
+from harbor.trial.multi_step import MultiStepTrial
 
 
 def _write_step_trajectory(
@@ -44,12 +44,12 @@ def _write_step_trajectory(
     )
 
 
-def _make_trial(tmp_path: Path) -> Trial:
-    trial = object.__new__(Trial)
+def _make_trial(tmp_path: Path) -> MultiStepTrial:
+    trial = object.__new__(MultiStepTrial)
     trial.config = SimpleNamespace(trial_name="trial-1")
-    trial._trial_paths = TrialPaths(trial_dir=tmp_path / "trial")
-    trial._trial_paths.mkdir()
-    trial._logger = SimpleNamespace(warning=lambda *args, **kwargs: None)
+    trial.paths = TrialPaths(trial_dir=tmp_path / "trial")
+    trial.paths.mkdir()
+    trial.logger = SimpleNamespace(warning=lambda *args, **kwargs: None)
     trial._result = SimpleNamespace(step_results=[])
     return trial
 
@@ -63,14 +63,14 @@ def test_write_multi_step_trajectory_aggregates_step_trajectories(
         StepResult(step_name="second"),
     ]
     _write_step_trajectory(
-        trial._trial_paths.step_agent_dir("first") / "trajectory.json",
+        trial.paths.step_agent_dir("first") / "trajectory.json",
         session_id="s1",
         message="first step",
         prompt_tokens=10,
         completion_tokens=2,
     )
     _write_step_trajectory(
-        trial._trial_paths.step_agent_dir("second") / "trajectory.json",
+        trial.paths.step_agent_dir("second") / "trajectory.json",
         session_id="s2",
         message="second step",
         prompt_tokens=20,
@@ -80,7 +80,7 @@ def test_write_multi_step_trajectory_aggregates_step_trajectories(
     trial._write_multi_step_trajectory()
 
     aggregate = Trajectory.model_validate_json(
-        (trial._trial_paths.agent_dir / "trajectory.json").read_text()
+        (trial.paths.agent_dir / "trajectory.json").read_text()
     )
     assert aggregate.session_id == "trial-1"
     assert aggregate.trajectory_id == "trial-1:multi-step"
@@ -108,7 +108,7 @@ def test_write_multi_step_trajectory_records_missing_step_trajectories(
         StepResult(step_name="timed-out"),
     ]
     _write_step_trajectory(
-        trial._trial_paths.step_agent_dir("first") / "trajectory.json",
+        trial.paths.step_agent_dir("first") / "trajectory.json",
         session_id="s1",
         message="first step",
         prompt_tokens=10,
@@ -118,7 +118,7 @@ def test_write_multi_step_trajectory_records_missing_step_trajectories(
     trial._write_multi_step_trajectory()
 
     aggregate = Trajectory.model_validate_json(
-        (trial._trial_paths.agent_dir / "trajectory.json").read_text()
+        (trial.paths.agent_dir / "trajectory.json").read_text()
     )
     assert [step.message for step in aggregate.steps] == ["first step"]
     assert aggregate.extra is not None
@@ -136,14 +136,14 @@ def test_write_multi_step_verifier_transcript_includes_prior_and_current_steps(
         StepResult(step_name="second"),
     ]
     _write_step_trajectory(
-        trial._trial_paths.step_agent_dir("first") / "trajectory.json",
+        trial.paths.step_agent_dir("first") / "trajectory.json",
         session_id="s1",
         message="first step",
         prompt_tokens=10,
         completion_tokens=2,
     )
     _write_step_trajectory(
-        trial._trial_paths.agent_dir / "trajectory.json",
+        trial.paths.agent_dir / "trajectory.json",
         session_id="s2",
         message="second step",
         prompt_tokens=20,
@@ -153,7 +153,7 @@ def test_write_multi_step_verifier_transcript_includes_prior_and_current_steps(
     trial._write_multi_step_verifier_transcript()
 
     payload = json.loads(
-        (trial._trial_paths.agent_dir / "000-multi-step-transcript.json").read_text()
+        (trial.paths.agent_dir / "000-multi-step-transcript.json").read_text()
     )
     assert payload["harbor_multi_step"] is True
     assert [message["message"]["content"] for message in payload["messages"]] == [
@@ -185,28 +185,28 @@ def test_reset_agent_post_run_state_for_step_resets_reused_installed_agent(
         def populate_context_post_run(self, context: AgentContext) -> None:
             pass
 
-    trial._agent = AgentWithPostRunGuard()
+    trial.agent = AgentWithPostRunGuard()
 
     trial._reset_agent_post_run_state_for_step()
 
-    assert trial._agent._post_run_completed is False
+    assert trial.agent._post_run_completed is False
 
 
 def test_maybe_populate_agent_context_runs_when_context_nonempty_but_no_trajectory(
     tmp_path: Path,
 ) -> None:
     trial = _make_trial(tmp_path)
-    agent = OpenClaw(logs_dir=trial._trial_paths.agent_dir)
+    agent = OpenClaw(logs_dir=trial.paths.agent_dir)
     calls = []
 
     def populate(context: AgentContext) -> None:
         calls.append(context)
 
     agent.populate_context_post_run = populate
-    trial._agent = agent
+    trial.agent = agent
     context = AgentContext(n_input_tokens=1)
 
-    trial._maybe_populate_agent_context(context)
+    trial._populate_agent_context(context)
 
     assert calls == [context]
 
@@ -215,16 +215,16 @@ def test_maybe_populate_agent_context_skips_when_context_and_trajectory_exist(
     tmp_path: Path,
 ) -> None:
     trial = _make_trial(tmp_path)
-    agent = OpenClaw(logs_dir=trial._trial_paths.agent_dir)
-    (trial._trial_paths.agent_dir / "trajectory.json").write_text("{}")
+    agent = OpenClaw(logs_dir=trial.paths.agent_dir)
+    (trial.paths.agent_dir / "trajectory.json").write_text("{}")
     calls = []
 
     def populate(context: AgentContext) -> None:
         calls.append(context)
 
     agent.populate_context_post_run = populate
-    trial._agent = agent
+    trial.agent = agent
 
-    trial._maybe_populate_agent_context(AgentContext(n_input_tokens=1))
+    trial._populate_agent_context(AgentContext(n_input_tokens=1))
 
     assert calls == []

@@ -207,7 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 
-jobs/
+/jobs/
 trials/
 *.ipynb
 /tasks/
@@ -218,19 +218,19 @@ ignore/
 !src/harbor/tasks/
 tmp/
 .DS_Store
-.mcp.json
+/.mcp.json
 /parity-experiments/
 ./dataset
 
 # Viewer static files (built in CI)
 src/harbor/viewer/static/
 .supabase
+supabase/
 .claude
 .codex
 apps/*
 !apps/viewer/
 .agents/
-
 related-projects
-
 outputs
+.tensorlake/

@@ -6,7 +6,7 @@ import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, override
 
 from rich.progress import Progress
 
@@ -28,7 +28,8 @@ from harbor.models.trial.result import (
 )
 from harbor.tasks.client import TaskDownloadResult, TaskIdType
 from harbor.trial.hooks import TrialEvent, TrialHookEvent
-from harbor.trial.trial import EnvironmentStartTimeoutError, Trial, VerifierTimeoutError
+from harbor.trial.errors import EnvironmentStartTimeoutError, VerifierTimeoutError
+from harbor.trial.trial import Trial
 from harbor.utils.logger import logger
 from harbor.utils.scripts import quote_shell_arg
 from harbor.verifier.verifier import Verifier
@@ -307,6 +308,15 @@ class ReverifyTrial:
 
         await self._invoke_hooks(TrialEvent.VERIFICATION_START)
         self.result.verifier = TimingInfo(started_at=datetime.now(timezone.utc))
+        timeout = min(
+            self.config.verifier.override_timeout_sec
+            or self._task.config.verifier.timeout_sec,
+            self.config.verifier.max_timeout_sec or float("inf"),
+        ) * (
+            self.config.verifier_timeout_multiplier
+            if self.config.verifier_timeout_multiplier is not None
+            else self.config.timeout_multiplier
+        )
         try:
             verifier = Verifier(
                 task=self._task,
@@ -314,15 +324,6 @@ class ReverifyTrial:
                 environment=self._environment,
                 override_env=self.config.verifier.env or None,
                 logger=self._logger,
-            )
-            timeout = min(
-                self.config.verifier.override_timeout_sec
-                or self._task.config.verifier.timeout_sec,
-                self.config.verifier.max_timeout_sec or float("inf"),
-            ) * (
-                self.config.verifier_timeout_multiplier
-                if self.config.verifier_timeout_multiplier is not None
-                else self.config.timeout_multiplier
             )
             self.result.verifier_result = await asyncio.wait_for(
                 verifier.verify(),
@@ -450,7 +451,7 @@ class ReverifyJob(Job):
         *,
         source_trials: list[SourceTrial],
         _task_configs: list[TaskConfig],
-        _metrics: dict[str, list[BaseMetric]],
+        _metrics: dict[str, list[BaseMetric[Any]]],
         _task_download_results: dict[TaskIdType, TaskDownloadResult] | None = None,
     ):
         self._source_trials = source_trials
@@ -479,6 +480,7 @@ class ReverifyJob(Job):
             _task_download_results=task_download_results,
         )
 
+    @override
     def _init_trial_configs(self) -> None:
         self._trial_configs = []
         for source_trial in self._source_trials:
@@ -527,6 +529,7 @@ class ReverifyJob(Job):
                 trial.add_hook(event, hook)
         return await trial.run()
 
+    @override
     async def _run_trials_with_queue(
         self,
         loading_progress: Progress,

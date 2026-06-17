@@ -1,6 +1,6 @@
 [project]
 name = "harbor-rewardkit"
-version = "0.1.4"
+version = "0.1.5"
 description = "Lightweight grading toolkit for environment-based tasks."
 readme = "README.md"
 license = "Apache-2.0"
@@ -23,11 +23,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-documents = ["markitdown[pdf,docx,pptx,xlsx,xls,outlook]>=0.1"]
+documents = ["markitdown[pdf,docx,pptx,xlsx,xls,outlook]>=0.1", "openpyxl>=3.1"]
 image = ["Pillow>=10.0"]
 all = [
     "Pillow>=10.0",
     "markitdown[pdf,docx,pptx,xlsx,xls,outlook]>=0.1",
+    "openpyxl>=3.1",
 ]
 
 [project.urls]
