@@ -809,6 +809,92 @@ COPY_SESSION_EOF
 
         return messages
 
+    def _get_openclaw_trajectory_content(self, session_id: str) -> str | None:
+        """
+        Get OpenClaw's native trajectory JSONL content, if it was downloaded.
+
+        The raw session JSONL contains messages, while the sibling
+        <session_id>.trajectory.jsonl contains context metadata such as the
+        compiled tool definitions.
+        """
+        candidates = [
+            self.logs_dir / "openclaw-trajectory.jsonl",
+            self.logs_dir / "openclaw-sessions" / f"{session_id}.trajectory.jsonl",
+        ]
+
+        for path in candidates:
+            if path.exists():
+                return path.read_text()
+
+        return None
+
+    @staticmethod
+    def _normalize_tool_definition(tool: dict[str, Any]) -> dict[str, Any] | None:
+        """Normalize OpenClaw tool schemas to OpenAI function definition shape."""
+        function = tool.get("function")
+        if isinstance(function, dict):
+            return {
+                "type": "function",
+                "function": function,
+            }
+
+        name = tool.get("name")
+        if not isinstance(name, str) or not name:
+            return None
+
+        normalized_function: dict[str, Any] = {"name": name}
+
+        description = tool.get("description")
+        if isinstance(description, str):
+            normalized_function["description"] = description
+
+        parameters = tool.get("parameters")
+        if isinstance(parameters, dict):
+            normalized_function["parameters"] = parameters
+
+        strict = tool.get("strict")
+        if isinstance(strict, bool):
+            normalized_function["strict"] = strict
+
+        return {
+            "type": "function",
+            "function": normalized_function,
+        }
+
+    def _extract_tool_definitions(self, session_id: str) -> list[dict[str, Any]] | None:
+        """Extract compiled tool definitions from OpenClaw trajectory JSONL."""
+        trajectory_content = self._get_openclaw_trajectory_content(session_id)
+        if not trajectory_content:
+            return None
+
+        for line_num, line in enumerate(trajectory_content.split("\n"), 1):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Failed to parse trajectory JSONL line {line_num}: {e}")
+                continue
+
+            if entry.get("type") != "context.compiled":
+                continue
+
+            tools = (entry.get("data") or {}).get("tools")
+            if not isinstance(tools, list):
+                return None
+
+            tool_definitions = [
+                normalized
+                for tool in tools
+                if isinstance(tool, dict)
+                and (normalized := self._normalize_tool_definition(tool)) is not None
+            ]
+            return tool_definitions or None
+
+        return None
+
     def _save_image(
         self, image_data: str, step_id: int, obs_index: int = 0, image_index: int = 0
     ) -> tuple[str, ImageMediaType] | tuple[None, None]:
@@ -969,10 +1055,12 @@ COPY_SESSION_EOF
         - OpenClaw thinking → ATIF reasoning_content
         """
         # Build Agent metadata
+        tool_definitions = self._extract_tool_definitions(session_id)
         agent = Agent(
             name=self.name(),
             version=self.version() or "unknown",
             model_name=self.model_name,
+            tool_definitions=tool_definitions,
             extra={
                 "openclaw_session_id": session_id,
             },

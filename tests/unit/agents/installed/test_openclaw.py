@@ -204,6 +204,101 @@ def test_openclaw_emits_atif_1_7_metadata(tmp_path: Path):
     assert data["steps"][1]["llm_call_count"] == 0
 
 
+def test_openclaw_includes_tool_definitions_from_trace_jsonl(tmp_path: Path):
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        extra_env={"ANTHROPIC_API_KEY": "test-key"},
+    )
+    agent.model_name = "anthropic/glm-4.7"
+
+    sessions_dir = tmp_path / "openclaw-sessions"
+    sessions_dir.mkdir()
+    trace_path = sessions_dir / "session-123.trajectory.jsonl"
+    trace_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "session.started", "data": {}}),
+                json.dumps(
+                    {
+                        "type": "context.compiled",
+                        "data": {
+                            "tools": [
+                                {
+                                    "name": "write",
+                                    "description": "Create or overwrite files",
+                                    "parameters": {
+                                        "type": "object",
+                                        "required": ["path", "content"],
+                                        "properties": {
+                                            "path": {"type": "string"},
+                                            "content": {"type": "string"},
+                                        },
+                                    },
+                                },
+                                {
+                                    "type": "function",
+                                    "function": {
+                                        "name": "exec",
+                                        "description": "Run a shell command",
+                                        "parameters": {
+                                            "type": "object",
+                                            "properties": {
+                                                "command": {"type": "string"}
+                                            },
+                                        },
+                                    },
+                                },
+                            ]
+                        },
+                    }
+                ),
+            ]
+        )
+    )
+
+    trajectory = agent._convert_to_atif_trajectory(
+        [
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Done"}],
+                "usage": {"input": 10, "output": 5},
+            }
+        ],
+        "session-123",
+    )
+
+    data = json.loads(json.dumps(trajectory.to_json_dict()))
+
+    assert data["agent"]["tool_definitions"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "write",
+                "description": "Create or overwrite files",
+                "parameters": {
+                    "type": "object",
+                    "required": ["path", "content"],
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "exec",
+                "description": "Run a shell command",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                },
+            },
+        },
+    ]
+
+
 def test_openclaw_session_discovery_ignores_generated_trajectory_jsonl(
     tmp_path: Path,
 ):
