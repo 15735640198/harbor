@@ -1,6 +1,0 @@
-ngram,count
-Generate Fix -> Generate Fix -> Generate Fix -> Generate Fix,30
-Retrieve -> Retrieve -> Retrieve -> Retrieve,4
-Retrieve -> Retrieve -> Retrieve -> Generate Fix,1
-Retrieve -> Retrieve -> Generate Fix -> Generate Fix,1
-Retrieve -> Generate Fix -> Generate Fix -> Generate Fix,1

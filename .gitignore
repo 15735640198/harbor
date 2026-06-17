@@ -208,6 +208,7 @@ __marimo__/
 
 
 /jobs/
+/archived-jobs/
 trials/
 *.ipynb
 /tasks/
