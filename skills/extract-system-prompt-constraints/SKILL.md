@@ -1,6 +1,6 @@
 ---
 name: extract-system-prompt-constraints
-description: Generate structured instruction-adherence constraints from an agent system prompt text file. Use when Codex must read a system prompt, extract global requirements, prohibitions, priority rules, tool-use restrictions, output requirements, conditional behaviors, and security or privacy policies, then write a JSON array of constraint objects for trace-only deterministic or heuristic instruction-adherence evaluation.
+description: Generate structured instruction-adherence constraints from an agent system prompt text file while ignoring injected user-specific profile, preference, address, memory, and conversation-history content. Use when Codex must read a system prompt, extract fixed global requirements, prohibitions, priority rules, tool-use restrictions, output requirements, conditional behaviors, and security or privacy policies, then write a JSON array of constraint objects for trace-only deterministic or heuristic instruction-adherence evaluation.
 ---
 
 # Extract System Prompt Constraints
@@ -20,27 +20,33 @@ Read one text file containing an agent system prompt and write a JSON file conta
    - Preserve line numbers while reading. Count line numbers yourself if the file is plain text.
    - Treat the prompt text as the only source of truth. Do not invent requirements from general Codex behavior.
 
-3. Extract only normative instruction content.
+3. Filter injected user-specific context.
+   - Ignore dynamic context about a specific user, organization, workspace, location, prior conversation, previous run, memory summary, or preference profile.
+   - Ignore specific names, addresses, emails, phone numbers, account identifiers, locations, time zones, dates, preferences, biographies, project histories, conversation histories, and prior-task summaries.
+   - Do not create constraints from facts such as "the user prefers concise answers", "the user is in <place>", "previously the user asked...", or "memory says...".
+   - If a section contains both fixed policy and user-specific data, extract only the fixed policy that would apply regardless of which user or history was injected.
+
+4. Extract only fixed normative instruction content.
    - Include: global requirements, prohibitions, priority rules, tool-use restrictions, output requirements, conditional behavior, security and privacy policies.
    - Include soft requirements such as "prefer" or "default to" when they affect adherence.
    - Exclude purely descriptive background, examples that do not imply an instruction, and task-specific facts with no behavioral requirement.
 
-4. Split constraints atomically.
+5. Split constraints atomically.
    - Use one object for one evaluable obligation, prohibition, restriction, or preference.
    - Split compound instructions when different conditions, actions, tools, outputs, or exceptions would be evaluated separately.
    - Keep explicit exceptions in the same object when they narrow the same requirement.
 
-5. Ground every object in source text.
+6. Ground every object in source text.
    - Use `source` as `system-prompt:<filename>:L<start>-L<end>`.
    - Use `source_excerpt` as a short exact excerpt from those lines.
    - If the source has a heading, incorporate the heading in `when` or `requirement`, not in place of line numbers.
 
-6. Write JSON only.
+7. Write JSON only.
    - The root value must be an array.
    - Use stable IDs in source order: `C001`, `C002`, `C003`, ...
    - Do not include Markdown fences, comments, or trailing commas.
 
-7. Validate the output.
+8. Validate the output.
    - Run:
 
 ```bash
@@ -105,6 +111,10 @@ When a constraint is useful but not trace-only deterministic, keep the constrain
 
 ## Extraction Guidance
 
+- Treat a rule as fixed only when it applies to the agent across users, conversations, and prompt captures.
+- Treat a section as injected user-specific context when it is headed or framed as `User Profile`, `User preferences`, `Memory`, `Conversation history`, `Prior conversations`, `Workspace history`, `Current user`, `Estimated location`, or similar.
+- Ignore the content of injected user-specific context even when it is phrased as a preference or instruction for this user.
+- Preserve fixed rules for handling injected context itself, such as privacy, citation, or memory-use policies, when those rules are written as general policy rather than as facts about a specific user.
 - Convert negative wording into `requirement_type: "must_not"` or `"may_only"` instead of burying the prohibition in prose.
 - Preserve priority and precedence instructions even if they are not directly checkable, because they affect conflict resolution.
 - Preserve tool names, channel names, approval rules, path restrictions, and sequencing requirements exactly enough for later matching.
