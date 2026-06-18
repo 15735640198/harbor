@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated, Sized
 
-from typer import Option, Typer
+from typer import Exit, Option, Typer
 
 traces_app = Typer(
     no_args_is_help=True, context_settings={"help_option_names": ["-h", "--help"]}
@@ -90,6 +90,113 @@ def blocks(
     print(f"Parsed {trajectory_path} into {out}")
     for name, written_path in written.items():
         print(f"{name}: {written_path}")
+
+
+@traces_app.command("convert")
+def convert(
+    agent: Annotated[
+        str,
+        Option(
+            "--agent",
+            help="Agent whose native harness output should be converted to ATIF",
+        ),
+    ],
+    path: Annotated[
+        Path,
+        Option(
+            "--path",
+            "-p",
+            help="Native harness output directory, or recursive root with --recursive",
+        ),
+    ],
+    recursive: Annotated[
+        bool,
+        Option(
+            "--recursive/--no-recursive",
+            help="Search recursively for matching agent log directories",
+        ),
+    ] = False,
+    out: Annotated[
+        Path | None,
+        Option(
+            "--out",
+            "-o",
+            help="Output trajectory path for single-input conversion",
+            show_default=False,
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        Option("--force", help="Overwrite existing trajectory.json files"),
+    ] = False,
+    validate: Annotated[
+        bool,
+        Option(
+            "--validate/--no-validate",
+            help="Validate converted ATIF before writing",
+        ),
+    ] = True,
+):
+    """Convert native agent harness output to ATIF trajectory.json files."""
+
+    from harbor.agents.trajectory_conversion import (
+        ConversionSummary,
+        TrajectoryConversionError,
+        convert_one,
+        convert_recursive,
+        list_converter_names,
+    )
+
+    if agent not in list_converter_names():
+        supported = ", ".join(list_converter_names())
+        print(f"Unsupported agent: {agent}. Supported agents: {supported}")
+        raise Exit(1)
+
+    if recursive and out is not None:
+        print("--out is only supported without --recursive")
+        raise Exit(1)
+
+    try:
+        if recursive:
+            summary = convert_recursive(
+                agent_name=agent,
+                root=path,
+                force=force,
+                validate=validate,
+            )
+        else:
+            summary = ConversionSummary(
+                [
+                    convert_one(
+                        agent_name=agent,
+                        input_dir=path,
+                        output_path=out,
+                        force=force,
+                        validate=validate,
+                    )
+                ]
+            )
+    except TrajectoryConversionError as exc:
+        print(str(exc))
+        raise Exit(1) from exc
+
+    for outcome in summary.outcomes:
+        if outcome.status == "converted":
+            print(f"converted: {outcome.input_dir} -> {outcome.output_path}")
+        elif outcome.status == "skipped":
+            print(
+                f"skipped: {outcome.input_dir} -> {outcome.output_path}"
+                f" ({outcome.message})"
+            )
+        else:
+            print(f"failed: {outcome.input_dir} ({outcome.message})")
+
+    print(
+        f"Summary: converted={summary.converted} "
+        f"skipped={summary.skipped} failed={summary.failed}"
+    )
+    if summary.failed:
+        raise Exit(1)
 
 
 @traces_app.command("export")
