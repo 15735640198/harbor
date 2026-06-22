@@ -1,0 +1,30 @@
+[
+  {
+    "adapter_name": "liveclawbench",
+    "adapter_builders": [],
+    "original_benchmark": [
+      {
+        "split": "v0.2.1",
+        "size": 134,
+        "harness": "harbor-openclaw",
+        "supported_agents": ["openclaw"],
+        "adaptable": true,
+        "notes": "The upstream Mosi-AI/LiveClawBench repository already supplies runnable Harbor task directories. Mosi-AI/LiveClawbench-trajectories supplies matching ATIF trajectory data, not task definitions."
+      }
+    ],
+    "harbor_adapter": [
+      {
+        "split": "v0.2.1",
+        "adapted_benchmark_size": 134,
+        "parity_benchmark_size": 0,
+        "parity_sampling_rate": 0.0,
+        "registry_benchmark_size": null,
+        "added_agents": [],
+        "parity_matching_agents": null,
+        "parity_unmatching_agents": null,
+        "parity_costs": null,
+        "notes": "Direct import. The only task-file change is adding stable [task].name metadata required by Harbor package registration."
+      }
+    ]
+  }
+]

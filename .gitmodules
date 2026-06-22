@@ -7,3 +7,6 @@
 [submodule "related-projects/external-tasks/clawbench"]
 	path = related-projects/external-tasks/clawbench
 	url = https://github.com/openclaw/clawbench.git
+[submodule "related-projects/external-tasks/liveclawbench"]
+	path = related-projects/external-tasks/liveclawbench
+	url = https://github.com/Mosi-AI/LiveClawBench.git

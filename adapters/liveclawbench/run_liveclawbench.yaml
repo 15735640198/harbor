@@ -1,0 +1,21 @@
+# LiveClawBench requires the upstream OpenClaw-enabled Harbor runtime and the
+# corresponding LiveClawBench Docker base images. See README.md before running.
+jobs_dir: jobs
+n_attempts: 1
+
+orchestrator:
+  type: local
+  n_concurrent_trials: 1
+  quiet: false
+
+environment:
+  type: docker
+  force_build: false
+  delete: true
+
+agents:
+  - name: openclaw
+    model_name: moonshot/<model-id>
+
+datasets:
+  - path: datasets/liveclawbench
