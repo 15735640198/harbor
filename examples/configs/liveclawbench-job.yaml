@@ -7,7 +7,7 @@
 # See adapters/liveclawbench/README.md for the shared-base image setup.
 #
 # Run from the repository root:
-#   uv run harbor run -c examples/configs/liveclawbench-smoke.yaml
+#   uv run harbor run -c examples/configs/liveclawbench-job.yaml
 jobs_dir: jobs
 n_attempts: 1
 timeout_multiplier: 1.0
@@ -20,15 +20,18 @@ orchestrator:
 
 environment:
   type: docker
-  force_build: true
+  # Reuse successfully built task images. Build all upstream base images once
+  # with `bun run build:images` before the first full run.
+  force_build: false
   delete: true
 
-# Some LiveClawBench tasks use an LLM judge.
+# LiveClawBench has 21 tasks whose verifier calls an OpenAI-compatible judge.
+# This gateway serves both the Anthropic agent API and the judge's OpenAI API.
 verifier:
   env:
-    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-    ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
-    MODEL_NAME: ${MODEL_NAME:-glm-5.1}
+    JUDGE_BASE_URL: ${ANTHROPIC_BASE_URL}
+    JUDGE_API_KEY: ${ANTHROPIC_API_KEY}
+    JUDGE_MODEL_ID: ${JUDGE_MODEL_ID:-glm-5.1}
 
 # Match the OpenClaw model/provider setup used by the PinchBench,
 # WildClawBench, and ClawBench examples. Harbor installs this newer OpenClaw
@@ -45,6 +48,15 @@ agents:
       # The gateway accepts the bare provider model ID, while the OpenClaw CLI
       # requires the provider-qualified value in `model_name` above.
       openclaw_config:
+        # Keep browser navigation narrowly enabled for task-local mock apps.
+        # `web_fetch` intentionally remains blocked for private URLs; Harbor
+        # adds task guidance to use curl or the browser for them.
+        browser:
+          ssrfPolicy:
+            dangerouslyAllowPrivateNetwork: false
+            allowedHostnames:
+              - localhost
+              - 127.0.0.1
         models:
           providers:
             anthropic:

@@ -114,6 +114,16 @@ def test_compose_config_patch_mcp(agent: OpenClaw, tmp_path: Path) -> None:
     assert cfg["mcp"]["servers"]["demo"]["args"] == ["--stdio"]
 
 
+def test_local_service_guidance_is_added_only_for_loopback_urls(
+    agent: OpenClaw,
+) -> None:
+    local = agent._with_local_service_guidance("Open http://localhost:5174/.")
+    public = agent._with_local_service_guidance("Open https://example.com/.")
+
+    assert "Do not use `web_fetch`" in local
+    assert public == "Open https://example.com/."
+
+
 def test_provider_base_url_from_env_in_uploaded_config(tmp_path: Path) -> None:
     """``<PROVIDER>_BASE_URL`` env var is merged into ``models.providers.<provider>``."""
     inference = "https://proxy.example.com/v1"

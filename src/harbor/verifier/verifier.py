@@ -1,4 +1,4 @@
-from typing import override
+from typing import Any, override
 import json
 import logging
 from pathlib import Path
@@ -86,13 +86,48 @@ class Verifier(BaseVerifier):
             )
 
         try:
-            return json.loads(self.trial_paths.reward_json_path.read_text())
+            parsed: Any = json.loads(self.trial_paths.reward_json_path.read_text())
         except (ValueError, TypeError) as e:
             raise VerifierOutputParseError(
                 f"Failed to parse rewards from JSON file {
                     self.trial_paths.reward_json_path
                 }"
             ) from e
+
+        if not isinstance(parsed, dict):
+            raise VerifierOutputParseError(
+                f"Reward JSON must be an object at {self.trial_paths.reward_json_path}"
+            )
+
+        rewards = {
+            key: value
+            for key, value in parsed.items()
+            if isinstance(key, str)
+            and isinstance(value, (float, int))
+            and not isinstance(value, bool)
+        }
+        ignored = sorted(set(parsed) - set(rewards))
+        if ignored:
+            self.logger.debug(
+                "Ignoring non-numeric reward JSON fields at %s: %s",
+                self.trial_paths.reward_json_path,
+                ", ".join(ignored),
+            )
+
+        # Some benchmark verifiers use reward.json for a detailed structured
+        # report and write their normalized scalar score separately to
+        # reward.txt. Preserve the detailed numeric fields while ensuring the
+        # standard Harbor reward key is available for aggregation.
+        if "reward" not in rewards and self.trial_paths.reward_text_path.exists():
+            try:
+                rewards.update(self._parse_reward_text())
+            except (RewardFileEmptyError, VerifierOutputParseError):
+                self.logger.debug(
+                    "Could not use reward.txt as a scalar fallback for %s",
+                    self.trial_paths.reward_json_path,
+                    exc_info=True,
+                )
+        return rewards
 
     def _resolve_tests(self) -> tuple[list[Path], Path, Path]:
         if self._skip_tests_upload:

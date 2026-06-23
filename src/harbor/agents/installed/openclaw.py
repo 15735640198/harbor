@@ -29,6 +29,15 @@ from harbor.utils.trajectory_utils import format_trajectory_json
 
 OPENCLAW_AGENT_SETUP_TIMEOUT_SEC = 1200.0
 
+_LOCAL_SERVICE_GUIDANCE = """
+
+## Local service access
+
+If this task references a `localhost`, `127.0.0.1`, or `::1` URL, access it with
+`curl`/other shell tools or the browser tool. Do not use `web_fetch` for local
+URLs: OpenClaw deliberately blocks private-network requests through that tool.
+""".strip()
+
 
 def openclaw_session_jsonl_to_atif_steps(
     path: Path | str,
@@ -642,6 +651,19 @@ class OpenClaw(BaseInstalledAgent):
 
         return cfg
 
+    @staticmethod
+    def _with_local_service_guidance(instruction: str) -> str:
+        """Tell OpenClaw how to access task-local services without web_fetch.
+
+        ``web_fetch`` rejects loopback and other private-network URLs by design.
+        LiveClawBench uses localhost services as part of several task environments,
+        so steer only those tasks toward tools that can legitimately access them.
+        """
+        lowered = instruction.lower()
+        if any(host in lowered for host in ("localhost", "127.0.0.1", "[::1]")):
+            return f"{instruction}\n{_LOCAL_SERVICE_GUIDANCE}"
+        return instruction
+
     def _trajectory_from_envelope_with_steps(
         self, envelope: dict[str, Any], steps: list[Step]
     ) -> Trajectory | None:
@@ -886,6 +908,7 @@ class OpenClaw(BaseInstalledAgent):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
+        instruction = self._with_local_service_guidance(instruction)
         escaped_instruction = shlex.quote(instruction)
 
         if not self.model_name or "/" not in self.model_name:
