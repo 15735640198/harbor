@@ -398,12 +398,13 @@ class MultiStepTrial(Trial):
             )
             for step in trajectory.steps:
                 role = "assistant" if step.source == "agent" else "user"
+                step_payload = step.model_dump(mode="json", exclude_none=True)
                 messages.append(
                     {
                         "type": "message",
                         "message": {
                             "role": role,
-                            "content": step.message,
+                            "content": step_payload["message"],
                         },
                         "harbor_step_name": step_name,
                         "harbor_original_step_id": step.step_id,

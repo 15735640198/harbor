@@ -4,7 +4,13 @@ from types import SimpleNamespace
 
 from harbor.agents.installed.openclaw import OpenClaw
 from harbor.models.agent.context import AgentContext
-from harbor.models.trajectories import Agent, FinalMetrics, Step, Trajectory
+from harbor.models.trajectories import (
+    Agent,
+    ContentPart,
+    FinalMetrics,
+    Step,
+    Trajectory,
+)
 from harbor.models.trial.paths import TrialPaths
 from harbor.models.trial.result import StepResult
 from harbor.trial.multi_step import MultiStepTrial
@@ -14,7 +20,7 @@ def _write_step_trajectory(
     path: Path,
     *,
     session_id: str,
-    message: str,
+    message: str | list[ContentPart],
     prompt_tokens: int,
     completion_tokens: int,
 ) -> None:
@@ -171,6 +177,29 @@ def test_write_multi_step_verifier_transcript_includes_prior_and_current_steps(
             "steps": 1,
         },
         {"step_name": "second", "path": "agent/trajectory.json", "steps": 1},
+    ]
+
+
+def test_write_multi_step_verifier_transcript_serializes_content_parts(
+    tmp_path: Path,
+) -> None:
+    trial = _make_trial(tmp_path)
+    trial.result.step_results = [StepResult(step_name="run")]
+    _write_step_trajectory(
+        trial.paths.agent_dir / "trajectory.json",
+        session_id="s1",
+        message=[ContentPart(type="text", text="multimodal-safe")],
+        prompt_tokens=10,
+        completion_tokens=2,
+    )
+
+    trial._write_multi_step_verifier_transcript()
+
+    payload = json.loads(
+        (trial.paths.agent_dir / "000-multi-step-transcript.json").read_text()
+    )
+    assert payload["messages"][0]["message"]["content"] == [
+        {"type": "text", "text": "multimodal-safe"}
     ]
 
 
