@@ -21,8 +21,15 @@ agents:
     model_name: openai/MiniMax-M2.7-highspeed
     kwargs:
       version: "2026.5.27"
-      context_window: 200000
-      max_tokens: 8192
+      openclaw_config:
+        models:
+          providers:
+            openai:
+              models:
+                - id: MiniMax-M2.7-highspeed
+                  name: MiniMax-M2.7-highspeed
+                  contextWindow: 200000
+                  maxTokens: 8192
     env:
       OPENAI_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_BASE_URL: ${ANTHROPIC_BASE_URL}

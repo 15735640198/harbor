@@ -157,6 +157,87 @@ def test_provider_baseurl_only_gets_models_array(tmp_path: Path) -> None:
     assert cfg["models"]["providers"]["openai"]["models"][0]["id"] == "openai/gpt-4.1"
 
 
+def test_legacy_model_kwargs_are_preserved_in_native_config(tmp_path: Path) -> None:
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        model_name="anthropic/kimi-k2.6",
+        context_window=200_000,
+        max_tokens=8_192,
+        model_params={"cacheRetention": "long"},
+        temperature=0.2,
+    )
+
+    cfg = agent._build_full_openclaw_config()
+
+    model = cfg["models"]["providers"]["anthropic"]["models"][0]
+    assert model == {
+        "id": "anthropic/kimi-k2.6",
+        "name": "anthropic/kimi-k2.6",
+        "contextWindow": 200_000,
+        "maxTokens": 8_192,
+    }
+    assert cfg["agents"]["defaults"]["models"]["anthropic/kimi-k2.6"] == {
+        "params": {
+            "cacheRetention": "long",
+            "temperature": 0.2,
+            "maxTokens": 8_192,
+        }
+    }
+
+
+def test_legacy_model_kwargs_update_bare_native_model_id(tmp_path: Path) -> None:
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        model_name="anthropic/kimi-k2.6",
+        context_window=200_000,
+        max_tokens=8_192,
+        openclaw_config={
+            "models": {
+                "providers": {
+                    "anthropic": {"models": [{"id": "kimi-k2.6", "name": "kimi-k2.6"}]}
+                }
+            }
+        },
+    )
+
+    cfg = agent._build_full_openclaw_config()
+
+    assert cfg["models"]["providers"]["anthropic"]["models"] == [
+        {
+            "id": "kimi-k2.6",
+            "name": "kimi-k2.6",
+            "contextWindow": 200_000,
+            "maxTokens": 8_192,
+        }
+    ]
+
+
+def test_legacy_model_kwargs_reject_conflicting_native_config(tmp_path: Path) -> None:
+    agent = OpenClaw(
+        logs_dir=tmp_path,
+        model_name="openai/gpt-4.1",
+        context_window=200_000,
+        openclaw_config={
+            "models": {
+                "providers": {
+                    "openai": {
+                        "models": [
+                            {
+                                "id": "openai/gpt-4.1",
+                                "name": "openai/gpt-4.1",
+                                "contextWindow": 128_000,
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="legacy value for 'contextWindow'"):
+        agent._build_full_openclaw_config()
+
+
 def test_factory_openclaw_default_install_timeout_when_override_unset(
     tmp_path: Path,
 ) -> None:

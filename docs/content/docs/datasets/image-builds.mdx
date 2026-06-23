@@ -1,0 +1,211 @@
+---
+title: Building Docker Images for Converted Claw Datasets
+description: Bootstrap and verify the Docker images required to run the published ClawBench, LiveClawBench, PinchBench, and WildClawBench Harbor datasets.
+---
+
+The published task directories contain each task's final `environment/Dockerfile`.
+Harbor builds that final image automatically on the first Docker-backed run. Do
+not build the dataset root: build context is always one task's
+`environment/` directory.
+
+Two datasets have an additional local-image prerequisite. Their Dockerfiles
+refer to an image that is neither in the task directory nor publicly pullable
+by the tag in the Dockerfile:
+
+| Dataset | Tasks | Final Dockerfile base | Manual bootstrap before the first run |
+| --- | ---: | --- | --- |
+| ClawBench | 19 | Pinned `ghcr.io/openclaw/openclaw` digest | No; Docker pulls it while building the task. |
+| PinchBench | 147 | `ubuntu:24.04` | No; Docker pulls it while building the task. |
+| WildClawBench | 60 | `wildclawbench-ubuntu-openclaw:2026.5.27` | Yes; load the upstream image tar, then build the OpenClaw derivative. |
+| LiveClawBench | 134 | `liveclawbench-base:latest` or a per-task `liveclawbench-*-base:latest` | Yes; build the shared image, mock binaries, and all per-task base images from the pinned upstream source. |
+
+The commands below use `$DATASET_ROOT` for the directory downloaded from the
+Hub. For a Harbor checkout, set it to one of `datasets/clawbench`,
+`datasets/pinchbench`, `datasets/wildclawbench`, or
+`datasets/liveclawbench`.
+
+## Prerequisites and normal Harbor behavior
+
+Docker Engine/Desktop must be running, with Docker Compose available. Verify
+that before a run:
+
+```bash
+docker info
+docker compose version
+```
+
+When Harbor starts a task with `environment.type: docker`, it invokes Docker
+Compose with that task's `environment/` directory as the build context. The
+resulting final task image is cached locally, so `force_build: false` reuses it
+until the task Dockerfile or context changes. The prerequisite images below
+must exist before that automatic build begins.
+
+Build and run one task first. A full dataset run otherwise starts many
+independent final-image builds, which makes a missing prerequisite harder to
+identify.
+
+On Apple Silicon and other non-amd64 hosts, install/enable Docker Desktop's
+Linux amd64 emulation. ClawBench and WildClawBench explicitly select
+`linux/amd64`; they cannot be rebuilt as native arm64 images without changing
+the benchmark environment.
+
+## ClawBench
+
+No local base image needs to be created. Every converted task starts from the
+same pinned, amd64 OpenClaw digest:
+
+```text
+ghcr.io/openclaw/openclaw@sha256:2e32f4f2e4f653f12d5dc6e5c93cc71e60f49d1dfaf061b18e53c3e61a38fb48
+```
+
+Docker will pull it when Harbor builds the first task. To prefetch it instead:
+
+```bash
+docker pull --platform linux/amd64 \
+  ghcr.io/openclaw/openclaw@sha256:2e32f4f2e4f653f12d5dc6e5c93cc71e60f49d1dfaf061b18e53c3e61a38fb48
+```
+
+An optional image-only smoke test is:
+
+```bash
+docker buildx build --platform linux/amd64 --load \
+  -t clawbench-smoke:local \
+  "$DATASET_ROOT/t2-config-loader/environment"
+```
+
+## PinchBench
+
+No separate bootstrap image is required. Each converted task builds from
+`ubuntu:24.04`, copies `uv` from `ghcr.io/astral-sh/uv:latest`, installs Node
+22 through NVM, and installs `openclaw@latest` during the task-image build.
+
+The first build therefore needs access to Docker Hub, GHCR, `raw.githubusercontent.com`,
+and npm. An image-only smoke test is:
+
+```bash
+docker build -t pinchbench-smoke:local \
+  "$DATASET_ROOT/task-email-reply-drafting/environment"
+```
+
+`openclaw@latest` is the current converted-Dockerfile behavior, not a pinned
+dependency. Rebuilding PinchBench later can produce a different OpenClaw
+installation. Preserve Docker's cache or publish a frozen derivative if exact
+reproduction matters.
+
+## WildClawBench
+
+WildClawBench needs two locally tagged amd64 images:
+
+1. `wildclawbench-ubuntu:v1.3`, loaded from the upstream image tarball.
+2. `wildclawbench-ubuntu-openclaw:2026.5.27`, built on top of that image with
+   the OpenClaw version used by the converted tasks.
+
+From a Harbor source checkout, download and load the upstream base image:
+
+```bash
+uvx --from "huggingface_hub[cli]" hf download internlm/WildClawBench \
+  --repo-type dataset \
+  --local-dir related-projects/external-tasks/WildClawBench \
+  --include "Images/wildclawbench-ubuntu_v1.3.tar"
+
+docker load -i \
+  related-projects/external-tasks/WildClawBench/Images/wildclawbench-ubuntu_v1.3.tar
+```
+
+Build the derivative from the adapter. The script sets both the required
+`linux/amd64` platform and the expected image tag:
+
+```bash
+PLATFORM=linux/amd64 \
+  bash adapters/wildclawbench/docker/openclaw/build.sh
+```
+
+If the Docker build itself requires an HTTP proxy, supply it deliberately;
+the script otherwise clears proxy settings inherited from the upstream image:
+
+```bash
+BUILD_HTTP_PROXY=http://proxy.example:8080 \
+BUILD_HTTPS_PROXY=http://proxy.example:8080 \
+PLATFORM=linux/amd64 \
+  bash adapters/wildclawbench/docker/openclaw/build.sh
+```
+
+Verify both tags and their architecture before running Harbor:
+
+```bash
+docker image inspect \
+  wildclawbench-ubuntu:v1.3 \
+  wildclawbench-ubuntu-openclaw:2026.5.27 \
+  --format '{{index .RepoTags 0}} {{.Os}}/{{.Architecture}}'
+```
+
+Both lines must report `linux/amd64`. The upstream image is large (about 13.5
+GiB uncompressed in this build); reserve substantial Docker disk space for it,
+the derived image, and task layers.
+
+## LiveClawBench
+
+LiveClawBench has a three-layer image model:
+
+1. `liveclawbench-base:latest`: common OpenClaw, Bun, Python, and Chromium
+   environment.
+2. `liveclawbench-<task>-base:latest`: one mock-platform image per task.
+3. The converted task Dockerfile: built automatically by Harbor.
+
+The published dataset carries only layer 3. Build layers 1 and 2 from the
+upstream repository revision used by the adapter. This pin matters because the
+per-task image tags use `latest` and must match the task definitions.
+
+```bash
+git clone https://github.com/Mosi-AI/LiveClawBench.git \
+  related-projects/external-tasks/liveclawbench
+git -C related-projects/external-tasks/liveclawbench checkout \
+  aae6d0ad6127eb648ef9117a6e9705c4ee8dc57b
+
+docker build -t liveclawbench-base:latest \
+  related-projects/external-tasks/liveclawbench/docker/base/
+
+cd related-projects/external-tasks/liveclawbench/mock-platform
+bun install --silent
+bun run build
+bun run build:images
+cd ../../../..
+```
+
+`bun run build:images` builds the 134 per-task base images. Do not skip it:
+most converted task Dockerfiles name one of those tags directly. Some task
+Dockerfiles use an `OPENCLAW_BASE_IMAGE` build argument, but its default is
+also a local LiveClawBench base image; overriding that argument globally would
+create an inconsistent benchmark environment.
+
+Check the shared image and one task-specific image before running the imported
+dataset:
+
+```bash
+docker image inspect liveclawbench-base:latest \
+  liveclawbench-watch-shop-base:latest \
+  --format '{{index .RepoTags 0}} {{.Os}}/{{.Architecture}}'
+```
+
+Use the original source's `setup.sh` only if you also want it to create its
+own Python environment and `.env`. For a published converted dataset, the four
+commands above are the image-building part of that setup; Harbor itself builds
+the task layer when you run the dataset.
+
+## Troubleshooting
+
+- `pull access denied` for `wildclawbench-ubuntu-openclaw` or
+  `liveclawbench-*-base`: the required local bootstrap step was skipped, the
+  tag differs, or Docker's local image store was pruned. Re-run that dataset's
+  bootstrap commands.
+- `no matching manifest` or an executable-format error on an Apple Silicon
+  host: rebuild/load WildClawBench as `linux/amd64` and make sure Docker
+  Desktop's amd64 emulation is enabled. The same applies to ClawBench task
+  builds.
+- A build fails during `apt`, npm, or package download: this is a task-image
+  build dependency, not a Hub download failure. Restore network/proxy access
+  for the Docker daemon, then retry the individual task first.
+- A full LiveClawBench run fails for only one task: inspect the missing tag in
+  the error and rerun `bun run build:images` from the pinned upstream checkout.
+  Do not substitute a similarly named base image from another revision.
+

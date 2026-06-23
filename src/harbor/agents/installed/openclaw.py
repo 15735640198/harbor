@@ -398,6 +398,35 @@ class OpenClaw(BaseInstalledAgent):
         **kwargs,
     ):
         override_setup_timeout_sec = kwargs.pop("override_setup_timeout_sec", None)
+        raw_context_window = kwargs.pop("context_window", None)
+        self._context_window = self._coerce_legacy_positive_int(
+            raw_context_window,
+            name="context_window",
+            minimum=16_384,
+        )
+        self._max_tokens = self._coerce_legacy_positive_int(
+            kwargs.pop("max_tokens", None),
+            name="max_tokens",
+        )
+        raw_model_params = kwargs.pop("model_params", None)
+        if raw_model_params is None:
+            self._model_params: dict[str, Any] = {}
+        elif isinstance(raw_model_params, dict):
+            self._model_params = copy.deepcopy(raw_model_params)
+        else:
+            raise ValueError("model_params must be a mapping when provided")
+
+        raw_temperature = kwargs.pop("temperature", None)
+        if raw_temperature is not None:
+            try:
+                self._model_params["temperature"] = float(raw_temperature)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("temperature must be a number when provided") from exc
+        if self._max_tokens is not None:
+            # This mirrors the pre-upstream adapter: max_tokens configures both
+            # the custom provider model and the selected model's request params.
+            self._model_params["maxTokens"] = self._max_tokens
+
         self._use_openclaw_session_jsonl_for_steps = bool(
             kwargs.pop("session_to_trajectory", True)
         )
@@ -412,6 +441,24 @@ class OpenClaw(BaseInstalledAgent):
         )
         super().__init__(*args, **kwargs)
         self._openclaw_config: dict[str, Any] = openclaw_config or {}
+
+    @staticmethod
+    def _coerce_legacy_positive_int(
+        value: Any,
+        *,
+        name: str,
+        minimum: int = 1,
+    ) -> int | None:
+        """Validate a legacy OpenClaw integer configuration value."""
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be an integer when provided") from exc
+        if parsed < minimum:
+            raise ValueError(f"{name} must be at least {minimum}")
+        return parsed
 
     @staticmethod
     def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -607,6 +654,119 @@ class OpenClaw(BaseInstalledAgent):
         if len(prov_cfg["models"]) == 0:
             prov_cfg["models"] = [{"id": self.model_name, "name": self.model_name}]
 
+    @staticmethod
+    def _set_legacy_config_value(
+        target: dict[str, Any],
+        key: str,
+        value: Any,
+        *,
+        location: str,
+    ) -> None:
+        """Set a compatibility value without silently overriding native config."""
+        if key in target and target[key] != value:
+            raise ValueError(
+                "Conflicting OpenClaw configuration: "
+                f"legacy value for {key!r} conflicts with openclaw_config at "
+                f"{location}."
+            )
+        target.setdefault(key, value)
+
+    def _apply_legacy_model_configuration(self, cfg: dict[str, Any]) -> None:
+        """Map pre-upstream OpenClaw kwargs into the native config schema.
+
+        ``context_window``, ``max_tokens``, ``model_params``, and ``temperature``
+        were public kwargs in Harbor's pre-upstream adapter. Keep accepting them so
+        existing jobs do not silently run with different custom-model limits.
+        """
+        if (
+            self._context_window is None
+            and self._max_tokens is None
+            and not self._model_params
+        ):
+            return
+
+        provider = self._model_provider()
+        if provider is None or self.model_name is None:
+            return
+
+        models_root = cfg.get("models")
+        if not isinstance(models_root, dict):
+            raise ValueError("openclaw_config.models must be a mapping")
+        providers = models_root.get("providers")
+        if not isinstance(providers, dict):
+            raise ValueError("openclaw_config.models.providers must be a mapping")
+        provider_config = providers.get(provider)
+        if not isinstance(provider_config, dict):
+            raise ValueError(
+                f"openclaw_config.models.providers.{provider} must be a mapping"
+            )
+        model_defs = provider_config.get("models")
+        if not isinstance(model_defs, list):
+            raise ValueError(
+                f"openclaw_config.models.providers.{provider}.models must be a list"
+            )
+
+        bare_model_name = self.model_name.split("/", 1)[1]
+        model_entry = next(
+            (
+                item
+                for item in model_defs
+                if isinstance(item, dict)
+                and item.get("id") in {self.model_name, bare_model_name}
+            ),
+            None,
+        )
+        if model_entry is None:
+            model_entry = {"id": self.model_name, "name": self.model_name}
+            model_defs.append(model_entry)
+
+        model_location = f"models.providers.{provider}.models"
+        if self._context_window is not None:
+            self._set_legacy_config_value(
+                model_entry,
+                "contextWindow",
+                self._context_window,
+                location=model_location,
+            )
+        if self._max_tokens is not None:
+            self._set_legacy_config_value(
+                model_entry,
+                "maxTokens",
+                self._max_tokens,
+                location=model_location,
+            )
+
+        if not self._model_params:
+            return
+        agents = cfg.get("agents")
+        if not isinstance(agents, dict):
+            raise ValueError("openclaw_config.agents must be a mapping")
+        defaults = agents.get("defaults")
+        if not isinstance(defaults, dict):
+            raise ValueError("openclaw_config.agents.defaults must be a mapping")
+        configured_models = defaults.setdefault("models", {})
+        if not isinstance(configured_models, dict):
+            raise ValueError("openclaw_config.agents.defaults.models must be a mapping")
+        model_config = configured_models.setdefault(self.model_name, {})
+        if not isinstance(model_config, dict):
+            raise ValueError(
+                f"openclaw_config.agents.defaults.models.{self.model_name} "
+                "must be a mapping"
+            )
+        params = model_config.setdefault("params", {})
+        if not isinstance(params, dict):
+            raise ValueError(
+                f"openclaw_config.agents.defaults.models.{self.model_name}.params "
+                "must be a mapping"
+            )
+        for key, value in self._model_params.items():
+            self._set_legacy_config_value(
+                params,
+                key,
+                value,
+                location=f"agents.defaults.models.{self.model_name}.params",
+            )
+
     def _build_full_openclaw_config(self) -> dict[str, Any]:
         """Full "openclaw.json" content: setup baseline + task/job overlays."""
         cfg = copy.deepcopy(self._SETUP_BASELINE)
@@ -642,6 +802,7 @@ class OpenClaw(BaseInstalledAgent):
 
         self._merge_provider_base_url_from_env(cfg)
         self._normalize_provider_models_schema(cfg)
+        self._apply_legacy_model_configuration(cfg)
         self._merge_harbor_headless_tool_denies(cfg)
 
         if self._failover_retries is not None:

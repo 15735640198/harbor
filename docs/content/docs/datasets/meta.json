@@ -6,6 +6,7 @@
         "publishing",
         "adapters",
         "benchmark-migration-guide",
+        "image-builds",
         "clawbench-migration",
         "wildclawbench-migration",
         "adapter-implementation-guide",
