@@ -235,3 +235,5 @@ apps/*
 related-projects
 outputs
 .tensorlake/
+.bitfun/
+.idea/
